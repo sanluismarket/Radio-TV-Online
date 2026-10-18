@@ -23,11 +23,11 @@
       </div>
       <div class="form-group">
         <label class="form-label">Email</label>
-        <input type="email" class="form-input" id="loginEmail" placeholder="locutor@radio.com" />
+        <input type="email" class="form-input" id="loginEmail" placeholder="locutor@radio.com" autocomplete="username" />
       </div>
       <div class="form-group">
         <label class="form-label">Contraseña</label>
-        <input type="password" class="form-input" id="loginPassword" placeholder="••••••••" onkeypress="if(event.key==='Enter') doLogin()" />
+        <input type="password" class="form-input" id="loginPassword" placeholder="••••••••" autocomplete="current-password" onkeypress="if(event.key==='Enter') doLogin()" />
       </div>
       <button class="btn btn-primary w-full" id="loginButton" onclick="doLogin()" style="margin-top:8px;">
         🔐 Ingresar al Panel
