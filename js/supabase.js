@@ -11,6 +11,9 @@
 const SUPABASE_URL = 'https://jglhqfwervwuidgunobt.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_5wLJTr60u0q-CNNjr2xggA_BnX-OCxS';
 
+// Versión de la app — si cambia en el servidor, la página se recarga sola
+const APP_VERSION = '2026-10-18.3';
+
 // Inicializar cliente de Supabase
 const { createClient } = supabase;
 const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -299,3 +302,22 @@ async function getCurrentUser() {
     return null;
   }
 }
+
+// ================================================
+// AUTO-ACTUALIZACIÓN: si el servidor tiene una
+// versión más nueva, la página se recarga sola
+// (evita problemas de caché con código viejo)
+// ================================================
+(async function checkForUpdates() {
+  try {
+    const r = await fetch('version.txt', { cache: 'no-store' });
+    if (!r.ok) return;
+    const remote = (await r.text()).trim();
+    if (remote && remote !== APP_VERSION) {
+      console.warn('🔄 Nueva versión:', remote, '(actual:', APP_VERSION + ') — recargando...');
+      setTimeout(() => {
+        location.href = location.pathname + '?v=' + encodeURIComponent(remote) + '&t=' + Date.now();
+      }, 1500);
+    }
+  } catch (e) { /* sin red o archivo no existe: seguir */ }
+})();
