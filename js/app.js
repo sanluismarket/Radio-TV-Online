@@ -21,6 +21,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadNowPlaying();
   await loadChatMessages();
   setupRealtimeListeners();
+  joinVideoChannel();
   startListenerCountSimulator();
   updateListenerUI();
 });
@@ -707,3 +708,157 @@ function escapeHtml(text) {
 
 // Actualizar "hace X minutos" del historial cada minuto
 setInterval(renderSongHistory, 60000);
+
+// ─────────────────────────────────────────────
+// 📹 VIDEO EN VIVO (oyente — WebRTC)
+// ─────────────────────────────────────────────
+
+const RTC_CONFIG = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:global.stun.twilio.com:3478' },
+  ],
+};
+
+const vidRx = {
+  channel: null,
+  viewerId: 'v_' + Math.random().toString(36).slice(2, 10),
+  pc: null,
+  watching: false,
+  wasPlayingBefore: false,
+  gotTrack: false,
+};
+
+function joinVideoChannel() {
+  if (DEMO_MODE || vidRx.channel) return;
+
+  const ch = supabase.channel('radio_video', {
+    config: { presence: { key: vidRx.viewerId }, broadcast: { self: false } }
+  });
+
+  ch.on('presence', { event: 'sync' }, () => updateVideoLiveBtn());
+  ch.on('presence', { event: 'leave' }, () => updateVideoLiveBtn());
+  ch.on('broadcast', { event: 'signal' }, ({ payload }) => viewerOnSignal(payload));
+
+  ch.subscribe((status) => {
+    if (status === 'SUBSCRIBED') ch.track({ live: false });
+  });
+  vidRx.channel = ch;
+}
+
+function hostIsVideoLive() {
+  if (!vidRx.channel) return false;
+  const raw = vidRx.channel.presenceState() || {};
+  return Object.values(raw).some(entries =>
+    (Array.isArray(entries) ? entries : [entries]).some(e => e && e.live === true)
+  );
+}
+
+function updateVideoLiveBtn() {
+  const card = document.getElementById('videoLiveCard');
+  if (!card) return;
+  const live = hostIsVideoLive();
+  if (live && !vidRx.watching) {
+    card.style.display = 'block';
+  } else if (!live) {
+    card.style.display = 'none';
+    if (vidRx.watching) closeVideoView(true);
+  }
+}
+
+async function startWatchingVideo() {
+  if (vidRx.watching || !vidRx.channel) return;
+  vidRx.watching = true;
+  vidRx.gotTrack = false;
+  document.getElementById('videoLiveCard').style.display = 'none';
+  document.getElementById('videoViewBox').style.display = 'block';
+
+  // Pausar el reproductor de radio: el video trae su propio sonido
+  if (state.isPlaying) {
+    vidRx.wasPlayingBefore = true;
+    try { togglePlay(); } catch (e) { /* ignore */ }
+    showToast('📼 Radio pausada: el video trae su propio sonido', 'info');
+  } else {
+    vidRx.wasPlayingBefore = false;
+  }
+
+  const pc = new RTCPeerConnection(RTC_CONFIG);
+  vidRx.pc = pc;
+
+  pc.ontrack = (ev) => {
+    vidRx.gotTrack = true;
+    const v = document.getElementById('remoteVideo');
+    if (v) {
+      v.srcObject = ev.streams[0];
+      v.play().catch(() => {});
+    }
+  };
+  pc.onicecandidate = (ev) => {
+    if (ev.candidate) viewerSend({ type: 'ice', to: 'locutor', from: vidRx.viewerId, candidate: ev.candidate });
+  };
+  pc.onconnectionstatechange = () => {
+    if (pc.connectionState === 'failed' && vidRx.watching) closeVideoView(true);
+  };
+
+  viewerSend({ type: 'request', from: vidRx.viewerId });
+
+  // Si en 12s no llega el video, avisar
+  setTimeout(() => {
+    if (vidRx.watching && !vidRx.gotTrack) {
+      showToast('⚠️ No se pudo conectar con el video. Intentá de nuevo en unos segundos.', 'error', 6000);
+      closeVideoView();
+    }
+  }, 12000);
+}
+
+function viewerSend(payload) {
+  if (vidRx.channel) vidRx.channel.send({ type: 'broadcast', event: 'signal', payload });
+}
+
+async function viewerOnSignal(msg) {
+  if (!msg) return;
+
+  if (msg.type === 'stop') {
+    if (vidRx.watching) closeVideoView(true);
+    return;
+  }
+
+  if (msg.to && msg.to !== vidRx.viewerId) return;
+
+  if (msg.type === 'offer' && vidRx.pc) {
+    try {
+      await vidRx.pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+      const answer = await vidRx.pc.createAnswer();
+      await vidRx.pc.setLocalDescription(answer);
+      viewerSend({ type: 'answer', to: 'locutor', from: vidRx.viewerId, sdp: vidRx.pc.localDescription });
+    } catch (e) {
+      console.error('Error al recibir el video:', e);
+    }
+    return;
+  }
+
+  if (msg.type === 'ice' && vidRx.pc) {
+    try { await vidRx.pc.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch (e) { /* ignore */ }
+  }
+}
+
+function closeVideoView(fromRemote) {
+  vidRx.watching = false;
+  if (vidRx.pc) { try { vidRx.pc.close(); } catch (e) { /* ignore */ } }
+  vidRx.pc = null;
+  if (!fromRemote) viewerSend({ type: 'leave', to: 'locutor', from: vidRx.viewerId });
+
+  const v = document.getElementById('remoteVideo');
+  if (v) { try { v.srcObject = null; } catch (e) { /* ignore */ } }
+  const box = document.getElementById('videoViewBox');
+  if (box) box.style.display = 'none';
+
+  updateVideoLiveBtn();
+
+  if (vidRx.wasPlayingBefore) {
+    vidRx.wasPlayingBefore = false;
+    if (!state.isPlaying) {
+      try { togglePlay(); } catch (e) { /* ignore */ }
+    }
+  }
+}

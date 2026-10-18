@@ -205,13 +205,27 @@
                   <button class="btn btn-primary" id="startCameraBtn" onclick="startCamera()">
                     📹 Activar Cámara
                   </button>
-                  <button class="btn btn-secondary" id="stopCameraBtn" onclick="stopCamera()" style="display:none;">
-                    ⏹️ Apagar Cámara
+                  <button class="btn btn-secondary" id="startScreenBtn" onclick="startScreenVideo()">
+                    🖥️ Compartir pantalla
+                  </button>
+                  <button class="btn btn-danger" id="stopCameraBtn" onclick="stopCamera()" style="display:none;">
+                    ⏹️ Apagar
                   </button>
                   <button class="btn btn-secondary" id="screenshotBtn" onclick="takeScreenshot()" style="display:none;">
                     📸 Captura
                   </button>
                 </div>
+
+                <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+                  <button class="btn btn-primary" id="videoGoLiveBtn" onclick="toggleVideoBroadcast()" style="background:linear-gradient(135deg,#ef4444,#f59e0b);">
+                    📹 Transmitir video en vivo
+                  </button>
+                  <span id="videoTxStatus" style="font-size:0.8rem; color:var(--text-secondary);"></span>
+                </div>
+                <p style="font-size:0.78rem; color:var(--text-secondary); margin-top:8px;">
+                  Al transmitir, los oyentes ven el botón <strong style="color:var(--text-primary);">"Ver en vivo"</strong> en la web de la radio y pueden mirarte.
+                </p>
+              </div>
               </div>
 
               <!-- Selección de cámara -->
@@ -299,13 +313,52 @@
             🎤 Fuentes de Audio
           </h2>
 
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-bottom:24px;">
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:24px; margin-bottom:24px;">
 
-            <!-- Opción 1: Micrófono directo -->
+            <!-- Opción 1: Música del panel (sin pantalla) -->
+            <div class="card" style="border-color:rgba(168,85,247,0.3);">
+              <div style="font-size:2rem; margin-bottom:8px;">🎵</div>
+              <div class="card-title">Música del Panel (sin pantalla)</div>
+              <p class="text-secondary" style="font-size:0.85rem; margin:8px 0 16px;">Cargá tus canciones (MP3) desde la compu y reproducilas acá. Se transmiten solas, sin compartir pantalla. Si querés hablar, activá también el micrófono.</p>
+              <div class="form-group">
+                <label class="form-label">Elegir canciones de la compu</label>
+                <input type="file" id="musicFiles" accept="audio/*" multiple style="font-size:0.8rem;">
+              </div>
+              <div id="playlistBox" style="display:none; max-height:130px; overflow-y:auto; background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:8px; padding:6px; margin-bottom:12px;">
+                <div id="playlist"></div>
+              </div>
+              <div style="display:flex; gap:10px; align-items:center;">
+                <button class="btn btn-primary" id="playListBtn" onclick="togglePanelMusic()" style="background:linear-gradient(135deg,#a855f7,#ec4899);">▶ Reproducir</button>
+                <span id="nowPlayingLabel" style="font-size:0.78rem; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:150px;"></span>
+              </div>
+            </div>
+
+            <!-- Opción 2: Audio de la PC -->
+            <div class="card" style="border-color:rgba(6,182,212,0.3);">
+              <div style="font-size:2rem; margin-bottom:8px;">🖥️</div>
+              <div class="card-title">Audio de la PC (Spotify, YouTube, etc.)</div>
+              <p class="text-secondary" style="font-size:0.85rem; margin:8px 0 16px;">Para transmitir la música que ya suena en tu PC.</p>
+              <div style="background:rgba(6,182,212,0.08); border:1px solid rgba(6,182,212,0.2); border-radius:10px; padding:14px; margin-bottom:16px;">
+                <p style="font-size:0.82rem; color:var(--cyan-light); font-weight:600; margin-bottom:6px;">💡 ¿Cómo hacerlo?</p>
+                <p style="font-size:0.8rem; color:var(--text-secondary); line-height:1.6;">
+                  Presioná el botón y en el recuadro del navegador elegí <strong style="color:var(--text-primary);">"Pantalla completa"</strong> y marcá <strong style="color:var(--cyan);">"Compartir audio del sistema"</strong>. Listo: suena todo lo de tu PC.
+                </p>
+              </div>
+              <div style="display:flex; gap:10px;">
+                <button class="btn btn-primary" id="startSysAudioBtn" onclick="startSystemAudio()" style="background:linear-gradient(135deg,#06b6d4,#10b981);">
+                  🖥️ Capturar Audio PC
+                </button>
+                <button class="btn btn-danger" id="stopSysAudioBtn" onclick="stopSystemAudio()" style="display:none;">
+                  ⏹️ Detener
+                </button>
+              </div>
+            </div>
+
+            <!-- Opción 3: Micrófono directo -->
             <div class="card" style="border-color:rgba(124,58,237,0.3);">
               <div style="font-size:2rem; margin-bottom:8px;">🎙️</div>
               <div class="card-title">Micrófono / Voz</div>
-              <p class="text-secondary" style="font-size:0.85rem; margin:8px 0 16px;">Transmitís con tu voz en vivo. Ideal para locutor hablando al air.</p>
+              <p class="text-secondary" style="font-size:0.85rem; margin:8px 0 16px;">Transmitís con tu voz en vivo. Ideal para locutor hablando al aire.</p>
               <div class="form-group">
                 <label class="form-label">Seleccionar micrófono</label>
                 <select class="form-select" id="micSelect">
@@ -328,28 +381,10 @@
               </div>
             </div>
 
-            <!-- Opción 2: Audio del sistema -->
-            <div class="card" style="border-color:rgba(6,182,212,0.3);">
-              <div style="font-size:2rem; margin-bottom:8px;">🖥️</div>
-              <div class="card-title">Audio del Sistema / PC</div>
-              <p class="text-secondary" style="font-size:0.85rem; margin:8px 0 16px;">Capturá el audio que está sonando en tu PC: música, Spotify, reproductores, etc.</p>
-              <div style="background:rgba(6,182,212,0.08); border:1px solid rgba(6,182,212,0.2); border-radius:10px; padding:14px; margin-bottom:16px;">
-                <p style="font-size:0.82rem; color:var(--cyan-light); font-weight:600; margin-bottom:6px;">💡 ¿Cómo funciona?</p>
-                <p style="font-size:0.8rem; color:var(--text-secondary); line-height:1.6;">
-                  Al presionar el botón, el navegador te pide que <strong style="color:var(--text-primary);">compartas tu pantalla</strong>. En esa ventana, hay que activar también <strong style="color:var(--cyan);">"Compartir audio del sistema"</strong>. Así capturás la música de Spotify, YouTube, etc.
-                </p>
-              </div>
-              <div style="display:flex; gap:10px;">
-                <button class="btn btn-primary" id="startSysAudioBtn" onclick="startSystemAudio()" style="background:linear-gradient(135deg,#06b6d4,#10b981);">
-                  🖥️ Capturar Audio PC
-                </button>
-                <button class="btn btn-danger" id="stopSysAudioBtn" onclick="stopSystemAudio()" style="display:none;">
-                  ⏹️ Detener
-                </button>
-              </div>
-            </div>
-
           </div>
+
+          <!-- Reproductor de audio oculto (música del panel) -->
+          <audio id="panelAudioEl" preload="auto" style="display:none;"></audio>
 
           <!-- Monitor de audio activo -->
           <div class="card mb-24" id="audioMonitorCard" style="display:none;">
@@ -362,7 +397,7 @@
               </div>
               <div>
                 <div style="font-weight:700; font-size:0.95rem;" id="audioSourceLabel">Fuente activa</div>
-                <div style="font-size:0.8rem; color:var(--green);">✅ Capturando audio correctamente</div>
+                <div style="font-size:0.8rem; color:var(--green);" id="signalStatusLabel">✅ Capturando audio</div>
               </div>
               <div style="flex:1;"></div>
               <select class="form-select" id="outputDeviceSelect" style="max-width:220px;">

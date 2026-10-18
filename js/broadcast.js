@@ -117,6 +117,9 @@ async function initDashboard(user) {
 
   // Realtime
   setupBroadcastRealtime();
+
+  // Reproductor de música del panel (sin pantalla)
+  initPanelPlayer();
 }
 
 async function loadBroadcastConfig() {
@@ -243,15 +246,6 @@ function pickRecorderMime() {
   return '';
 }
 
-function getActiveAudioSource() {
-  for (const s of [audioState.sysStream, audioState.micStream]) {
-    if (!s) continue;
-    const t = s.getAudioTracks().find(t => t.readyState === 'live');
-    if (t) return s;
-  }
-  return null;
-}
-
 function blobToBase64(blob) {
   return new Promise((resolve) => {
     const fr = new FileReader();
@@ -267,17 +261,17 @@ async function startWebBroadcast() {
     return false;
   }
 
-  // Buscar fuente de audio activa (sistema o micrófono)
-  let source = getActiveAudioSource();
+  // Buscar fuente de audio activa (mezcla de todas las fuentes)
+  let source = getBroadcastStream();
   if (!source) {
-    showToast('🖥️ Compartí tu pantalla marcando "Compartir audio del sistema"...', 'info', 7000);
+    showToast('🖥️ Compartí tu PANTALLA COMPLETA con audio (o activá música/micrófono)...', 'info', 7000);
     try {
       await startSystemAudio();
     } catch (e) { /* cancelado */ }
-    source = getActiveAudioSource();
+    source = getBroadcastStream();
   }
   if (!source) {
-    showToast('❌ No se capturó audio. Activá "🖥️ Capturar Audio PC" (y marcá compartir audio) o el micrófono en la pestaña Audio, y volvé a probar.', 'error', 9000);
+    showToast('❌ No hay audio activo. Opciones: 🎵 Música del panel, 🎙️ Micrófono o 🖥️ Audio de la PC (pestaña Audio).', 'error', 9000);
     return false;
   }
 
@@ -334,12 +328,7 @@ async function startWebBroadcast() {
     forceEndBroadcast('❌ La captura de audio falló');
   };
 
-  // Si el navegador corta la fuente (ej: "Dejar de compartir")
-  source.getAudioTracks().forEach(t => {
-    t.addEventListener('ended', () => {
-      if (webTx.active) forceEndBroadcast('❌ Se detuvo la fuente de audio — transmission finalizada');
-    }, { once: true });
-  });
+  startSignalMonitor(source);
 
   recorder.start(2500);
   return true;
@@ -347,6 +336,7 @@ async function startWebBroadcast() {
 
 function stopWebBroadcast() {
   webTx.active = false;
+  stopSignalMonitor();
   try {
     if (webTx.recorder && webTx.recorder.state !== 'inactive') webTx.recorder.stop();
   } catch (e) { /* ya detenido */ }
@@ -713,6 +703,7 @@ const cameraState = {
   deviceId: null,
   quality: 720,
   mirrored: false,
+  isScreen: false,
 };
 
 async function startCamera() {
@@ -723,11 +714,12 @@ async function startCamera() {
         width: { ideal: cameraState.quality === 1080 ? 1920 : cameraState.quality === 480 ? 640 : 1280 },
         height: { ideal: cameraState.quality === 1080 ? 1080 : cameraState.quality === 480 ? 480 : 720 },
       },
-      audio: false,
+      audio: true,
     };
 
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
     cameraState.stream = stream;
+    cameraState.isScreen = false;
 
     const video = document.getElementById('cameraVideo');
     video.srcObject = stream;
@@ -766,6 +758,11 @@ function stopCamera() {
   if (cameraState.stream) {
     cameraState.stream.getTracks().forEach(t => t.stop());
     cameraState.stream = null;
+  }
+  cameraState.isScreen = false;
+
+  if (typeof vidTx !== 'undefined' && vidTx.active) {
+    stopVideoBroadcast('⏹️ Video detenido — se apagó la fuente de imagen');
   }
 
   const video = document.getElementById('cameraVideo');
@@ -878,7 +875,226 @@ const audioState = {
   audioCtx: null,
   analyser: null,
   animFrame: null,
+  playerPlaying: false,
 };
+
+// ─────────────────────────────────────────────
+// 🎛️ MEZCLADOR DE AUDIO (mezcla todas las fuentes activas)
+// ─────────────────────────────────────────────
+
+const mix = {
+  ctx: null,
+  dest: null,
+  micSrc: null, micAttached: false,
+  sysSrc: null, sysAttached: false,
+};
+
+const panelPlayer = {
+  files: [],
+  index: -1,
+  el: null,
+  elAttached: false,
+  elSrc: null,
+};
+
+function ensureMixGraph() {
+  if (!mix.ctx || mix.ctx.state === 'closed') {
+    mix.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    mix.dest = mix.ctx.createMediaStreamDestination();
+  }
+  if (mix.ctx.state === 'suspended') mix.ctx.resume();
+  return mix.ctx;
+}
+
+function getBroadcastStream() {
+  const micLive  = !!(audioState.micStream  && audioState.micStream.getAudioTracks().some(t => t.readyState === 'live'));
+  const sysLive  = !!(audioState.sysStream  && audioState.sysStream.getAudioTracks().some(t => t.readyState === 'live'));
+  const playerLive = !!(audioState.playerPlaying && panelPlayer.el && !panelPlayer.el.paused);
+  if (!micLive && !sysLive && !playerLive) return null;
+
+  ensureMixGraph();
+  if (micLive && !mix.micAttached) {
+    mix.micSrc = mix.ctx.createMediaStreamSource(audioState.micStream);
+    mix.micSrc.connect(mix.dest);
+    mix.micAttached = true;
+  }
+  if (sysLive && !mix.sysAttached) {
+    mix.sysSrc = mix.ctx.createMediaStreamSource(audioState.sysStream);
+    mix.sysSrc.connect(mix.dest);
+    mix.sysAttached = true;
+  }
+  return mix.dest.stream;
+}
+
+function detachMixSource(id) {
+  if (id === 'mic' && mix.micAttached) {
+    try { mix.micSrc.disconnect(); } catch (e) { /* ignore */ }
+    mix.micSrc = null; mix.micAttached = false;
+  }
+  if (id === 'sys' && mix.sysAttached) {
+    try { mix.sysSrc.disconnect(); } catch (e) { /* ignore */ }
+    mix.sysSrc = null; mix.sysAttached = false;
+  }
+}
+
+function updateAudioMonitorLabel() {
+  const parts = [];
+  if (audioState.playerPlaying) parts.push('🎵 Música del panel');
+  if (audioState.sysStream)     parts.push('🖥️ Audio de la PC');
+  if (audioState.micStream)     parts.push('🎙️ Micrófono');
+  if (parts.length) showAudioMonitor(parts.join(' + '));
+  else hideAudioMonitor();
+}
+
+// Monitor de señal: avisa si realmente está llegando audio
+let signalMon = null, signalMonCtx = null;
+
+function startSignalMonitor(stream) {
+  stopSignalMonitor();
+  try {
+    signalMonCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = signalMonCtx.createMediaStreamSource(stream);
+    const an = signalMonCtx.createAnalyser();
+    an.fftSize = 512;
+    src.connect(an);
+    const data = new Uint8Array(an.fftSize);
+    signalMon = setInterval(() => {
+      const label = document.getElementById('signalStatusLabel');
+      if (!label || !signalMonCtx) return;
+      an.getByteTimeDomainData(data);
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) { const v = (data[i] - 128) / 128; sum += v * v; }
+      const rms = Math.sqrt(sum / data.length);
+      if (rms > 0.012) {
+        label.textContent = '🔊 Llegando audio a la radio';
+        label.style.color = 'var(--green)';
+      } else {
+        label.textContent = '🔇 Sin audio — revisá que la fuente esté sonando';
+        label.style.color = '#f59e0b';
+      }
+    }, 1000);
+  } catch (e) { /* ignore */ }
+}
+
+function stopSignalMonitor() {
+  if (signalMon) { clearInterval(signalMon); signalMon = null; }
+  if (signalMonCtx) { signalMonCtx.close().catch(() => {}); signalMonCtx = null; }
+  const label = document.getElementById('signalStatusLabel');
+  if (label) { label.textContent = '✅ Capturando audio'; label.style.color = 'var(--green)'; }
+}
+
+// ─────────────────────────────────────────────
+// 🎵 REPRODUCTOR DEL PANEL (música sin compartir pantalla)
+// ─────────────────────────────────────────────
+
+function initPanelPlayer() {
+  panelPlayer.el = document.getElementById('panelAudioEl');
+  const input = document.getElementById('musicFiles');
+  if (input) input.addEventListener('change', onMusicFiles);
+  if (panelPlayer.el) {
+    panelPlayer.el.addEventListener('ended', () => playPanelTrack(panelPlayer.index + 1));
+    panelPlayer.el.addEventListener('play', () => {
+      audioState.playerPlaying = true;
+      updatePanelPlayBtn();
+      updateAudioMonitorLabel();
+    });
+    panelPlayer.el.addEventListener('pause', () => {
+      audioState.playerPlaying = false;
+      updatePanelPlayBtn();
+      updateAudioMonitorLabel();
+    });
+  }
+}
+
+function onMusicFiles(e) {
+  const list = Array.from(e.target.files || []);
+  if (!list.length) return;
+  list.forEach(f => panelPlayer.files.push({
+    name: f.name.replace(/\.[^.]+$/, ''),
+    url: URL.createObjectURL(f)
+  }));
+  renderPlaylist();
+  showToast(`🎵 ${list.length} canción(es) agregada(s) a la lista`, 'success');
+}
+
+function renderPlaylist() {
+  const box = document.getElementById('playlistBox');
+  const list = document.getElementById('playlist');
+  if (!box || !list) return;
+  box.style.display = panelPlayer.files.length ? 'block' : 'none';
+  list.innerHTML = panelPlayer.files.map((s, i) => `
+    <div onclick="playPanelTrack(${i})" style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;${i === panelPlayer.index ? 'background:rgba(168,85,247,0.18);' : ''}">
+      <span style="font-size:0.85rem;">${i === panelPlayer.index && audioState.playerPlaying ? '⏸' : '▶'}</span>
+      <span style="font-size:0.85rem; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-primary);">${escapeHtml(s.name)}</span>
+    </div>`).join('');
+}
+
+function attachPanelElement() {
+  if (mix.elAttached || !panelPlayer.el) return;
+  ensureMixGraph();
+  mix.elSrc = mix.ctx.createMediaElementSource(panelPlayer.el);
+  mix.elSrc.connect(mix.dest);              // → se transmite a los oyentes
+  mix.elSrc.connect(mix.ctx.destination);   // → el locutor también la escucha
+  mix.elAttached = true;
+}
+
+async function playPanelTrack(i) {
+  if (!panelPlayer.el || !panelPlayer.files.length) return;
+  if (i >= panelPlayer.files.length) {
+    panelPlayer.index = -1;
+    panelPlayer.el.removeAttribute('src');
+    audioState.playerPlaying = false;
+    updatePanelPlayBtn();
+    updateAudioMonitorLabel();
+    renderPlaylist();
+    return;
+  }
+  attachPanelElement();
+  panelPlayer.index = i;
+  panelPlayer.el.src = panelPlayer.files[i].url;
+  try {
+    await panelPlayer.el.play();
+  } catch (err) {
+    showToast('❌ No se pudo reproducir: ' + err.message, 'error');
+    return;
+  }
+  updatePanelPlayBtn();
+  updateNowPlayingLabel();
+  renderPlaylist();
+}
+
+function togglePanelMusic() {
+  if (!panelPlayer.el) return;
+  if (!panelPlayer.el.src || panelPlayer.index < 0) {
+    playPanelTrack(0);
+    return;
+  }
+  if (panelPlayer.el.paused) {
+    attachPanelElement();
+    panelPlayer.el.play().catch(err => showToast('❌ ' + err.message, 'error'));
+  } else {
+    panelPlayer.el.pause();
+    setTimeout(() => {
+      if (webTx.active && !getBroadcastStream()) {
+        forceEndBroadcast('⏹️ Se detuvo la última fuente de audio');
+      }
+    }, 200);
+  }
+}
+
+function updatePanelPlayBtn() {
+  const btn = document.getElementById('playListBtn');
+  if (!btn) return;
+  const playing = panelPlayer.el && !panelPlayer.el.paused;
+  btn.textContent = playing ? '⏸ Pausar' : '▶ Reproducir';
+}
+
+function updateNowPlayingLabel() {
+  const el = document.getElementById('nowPlayingLabel');
+  if (el && panelPlayer.index >= 0 && panelPlayer.files[panelPlayer.index]) {
+    el.textContent = panelPlayer.files[panelPlayer.index].name;
+  }
+}
 
 async function startMicrophone() {
   try {
@@ -912,8 +1128,9 @@ async function startMicrophone() {
     document.getElementById('stopMicBtn').style.display = 'inline-flex';
 
     // Monitor general
-    showAudioMonitor('🎙️ Micrófono activo');
+    updateAudioMonitorLabel();
     showToast('🎙️ Micrófono activado', 'success');
+    getBroadcastStream(); // si ya está al aire, se conecta al mezclador
 
     // Listar también al iniciar
     await listMicrophones();
@@ -928,7 +1145,6 @@ async function startMicrophone() {
 }
 
 function stopMicrophone() {
-  const wasTxSource = webTx.active && webTx.source === audioState.micStream;
   if (audioState.micStream) {
     audioState.micStream.getTracks().forEach(t => t.stop());
     audioState.micStream = null;
@@ -948,10 +1164,13 @@ function stopMicrophone() {
   const bar = document.getElementById('micLevelBar');
   if (bar) bar.style.width = '0%';
 
-  hideAudioMonitor();
+  detachMixSource('mic');
+  updateAudioMonitorLabel();
   showToast('⏹️ Micrófono apagado', 'info');
 
-  if (wasTxSource) forceEndBroadcast('⏹️ Micrófono apagado — transmission finalizada');
+  if (webTx.active && !getBroadcastStream()) {
+    forceEndBroadcast('⏹️ Micrófono apagado — no queda ninguna fuente de audio');
+  }
 }
 
 function startMicLevelMeter() {
@@ -1033,8 +1252,9 @@ async function startSystemAudio(maxAttempts = 3) {
       document.getElementById('startSysAudioBtn').style.display = 'none';
       document.getElementById('stopSysAudioBtn').style.display = 'inline-flex';
 
-      showAudioMonitor('🖥️ Audio del sistema activo');
-      showToast('🖥️ Audio del sistema capturado', 'success');
+      updateAudioMonitorLabel();
+      getBroadcastStream(); // si ya está al aire, se conecta al mezclador
+      showToast('🖥️ Audio de la PC capturado', 'success');
       return true;
     }
 
@@ -1043,14 +1263,14 @@ async function startSystemAudio(maxAttempts = 3) {
 
     if (attempt === maxAttempts) {
       showToast(
-        '❌ No se capturó audio. Volvé a compartir eligiendo una PESTAÑA o la PANTALLA COMPLETA (no una ventana) y marcá "Compartir audio del sistema".',
+        '❌ No se capturó audio. Compartí tu PANTALLA COMPLETA y marcá "Compartir audio del sistema".',
         'error',
         9000
       );
       return false;
     }
     showToast(
-      '⚠️ La ventana compartida no tiene audio. Reintentá: elegí "Pestaña" o "Pantalla completa" y marcá "Compartir audio del sistema".',
+      '⚠️ No se captó audio. Reintentá: elegí PANTALLA COMPLETA y marcá la casilla "Compartir audio del sistema".',
       'warning',
       7000
     );
@@ -1060,7 +1280,6 @@ async function startSystemAudio(maxAttempts = 3) {
 }
 
 function stopSystemAudio() {
-  const wasTxSource = webTx.active && webTx.source === audioState.sysStream;
   if (audioState.sysStream) {
     audioState.sysStream.getTracks().forEach(t => t.stop());
     audioState.sysStream = null;
@@ -1069,10 +1288,13 @@ function stopSystemAudio() {
   document.getElementById('startSysAudioBtn').style.display = 'inline-flex';
   document.getElementById('stopSysAudioBtn').style.display = 'none';
 
-  hideAudioMonitor();
-  showToast('⏹️ Captura de audio del sistema detenida', 'info');
+  detachMixSource('sys');
+  updateAudioMonitorLabel();
+  showToast('⏹️ Captura de audio de la PC detenida', 'info');
 
-  if (wasTxSource) forceEndBroadcast('⏹️ Audio del sistema apagado — transmission finalizada');
+  if (webTx.active && !getBroadcastStream()) {
+    forceEndBroadcast('⏹️ Audio de la PC apagado — no queda ninguna fuente de audio');
+  }
 }
 
 function showAudioMonitor(label) {
@@ -1087,6 +1309,182 @@ function hideAudioMonitor() {
   if (!audioState.micStream && !audioState.sysStream) {
     const card = document.getElementById('audioMonitorCard');
     if (card) card.style.display = 'none';
+  }
+}
+
+// ─────────────────────────────────────────────
+// 🖥️ COMPARTIR PANTALLA COMO VIDEO
+// ─────────────────────────────────────────────
+
+async function startScreenVideo() {
+  try {
+    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+    if (cameraState.stream && cameraState.stream !== stream) {
+      cameraState.stream.getTracks().forEach(t => t.stop());
+    }
+    cameraState.stream = stream;
+    cameraState.deviceId = null;
+    cameraState.isScreen = true;
+
+    const video = document.getElementById('cameraVideo');
+    video.srcObject = stream;
+    video.style.display = 'block';
+    video.style.transform = 'none';
+    cameraState.mirrored = false;
+
+    document.getElementById('cameraPlaceholder').style.display = 'none';
+    document.getElementById('cameraOnAirOverlay').style.display = 'block';
+    document.getElementById('mirrorBtn').style.display = 'none';
+    document.getElementById('startCameraBtn').style.display = 'none';
+    document.getElementById('stopCameraBtn').style.display = 'inline-flex';
+    document.getElementById('screenshotBtn').style.display = 'inline-flex';
+
+    const vt = stream.getVideoTracks()[0];
+    if (vt) vt.addEventListener('ended', () => stopCamera(), { once: true });
+
+    showToast('🖥️ Pantalla compartida — ya podés transmitir el video en vivo', 'success');
+  } catch (err) {
+    if (err.name === 'NotAllowedError') {
+      showToast('❌ Permiso denegado para compartir pantalla', 'error');
+    } else {
+      showToast('❌ ' + err.message, 'error');
+    }
+  }
+}
+
+// ─────────────────────────────────────────────
+// 📹 TRANSMISIÓN DE VIDEO EN VIVO (WebRTC)
+// ─────────────────────────────────────────────
+
+const RTC_CONFIG = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:global.stun.twilio.com:3478' },
+  ],
+};
+
+const vidTx = {
+  channel: null,
+  active: false,
+  peers: new Map(), // viewerId → RTCPeerConnection
+};
+
+async function toggleVideoBroadcast() {
+  if (!vidTx.active) {
+    if (!cameraState.stream) {
+      showToast('📹 Primero activá la cámara o compartí la pantalla (arriba)', 'warning');
+      return;
+    }
+
+    const ch = supabase.channel('radio_video', {
+      config: { presence: { key: 'locutor' }, broadcast: { self: false } }
+    });
+    ch.on('broadcast', { event: 'signal' }, ({ payload }) => hostOnSignal(payload));
+
+    await ch.subscribe((status) => {
+      if (status === 'SUBSCRIBED') ch.track({ live: true });
+    });
+
+    vidTx.channel = ch;
+    vidTx.active = true;
+    updateVideoBtnUI();
+    showToast('📹 Video en vivo activado — los oyentes ven "Ver en vivo"', 'success', 5000);
+  } else {
+    stopVideoBroadcast('⏹️ Transmisión de video finalizada');
+  }
+}
+
+function stopVideoBroadcast(msg) {
+  const wasActive = vidTx.active;
+  vidTx.active = false;
+  try { if (vidTx.channel) vidSend({ type: 'stop', from: 'locutor' }); } catch (e) { /* ignore */ }
+  vidTx.peers.forEach(pc => { try { pc.close(); } catch (e) { /* ignore */ } });
+  vidTx.peers.clear();
+  if (vidTx.channel) {
+    try { vidTx.channel.untrack(); } catch (e) { /* ignore */ }
+    try { supabase.removeChannel(vidTx.channel); } catch (e) { /* ignore */ }
+    vidTx.channel = null;
+  }
+  updateVideoBtnUI();
+  if (msg && wasActive) showToast(msg, 'info');
+}
+
+function vidSend(payload) {
+  if (vidTx.channel) vidTx.channel.send({ type: 'broadcast', event: 'signal', payload });
+}
+
+async function hostOnSignal(msg) {
+  if (!msg || !vidTx.active) return;
+
+  if (msg.type === 'request') {
+    const viewer = msg.from;
+    if (vidTx.peers.has(viewer)) {
+      try { vidTx.peers.get(viewer).close(); } catch (e) { /* ignore */ }
+      vidTx.peers.delete(viewer);
+    }
+    const pc = new RTCPeerConnection(RTC_CONFIG);
+    vidTx.peers.set(viewer, pc);
+    addHostTracks(pc);
+    pc.onicecandidate = (ev) => {
+      if (ev.candidate) vidSend({ type: 'ice', to: viewer, from: 'locutor', candidate: ev.candidate });
+    };
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      vidSend({ type: 'offer', to: viewer, from: 'locutor', sdp: pc.localDescription });
+    } catch (e) {
+      console.error('Error creando oferta de video:', e);
+    }
+    return;
+  }
+
+  if (msg.type === 'answer') {
+    const pc = vidTx.peers.get(msg.from);
+    if (pc) { try { await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp)); } catch (e) { /* ignore */ } }
+    return;
+  }
+
+  if (msg.type === 'ice') {
+    const pc = vidTx.peers.get(msg.from);
+    if (pc) { try { await pc.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch (e) { /* ignore */ } }
+    return;
+  }
+
+  if (msg.type === 'leave') {
+    const pc = vidTx.peers.get(msg.from);
+    if (pc) { try { pc.close(); } catch (e) { /* ignore */ } }
+    vidTx.peers.delete(msg.from);
+  }
+}
+
+function addHostTracks(pc) {
+  const cam = cameraState.stream;
+  if (!cam) return;
+
+  const videoTrack = cam.getVideoTracks()[0];
+  if (videoTrack) pc.addTrack(videoTrack, cam);
+
+  // Audio: la mezcla de la radio (música + voz) si está activa, si no el de la fuente
+  let audioStream = null;
+  try { audioStream = getBroadcastStream(); } catch (e) { /* ignore */ }
+  if (audioStream && audioStream.getAudioTracks()[0]) {
+    pc.addTrack(audioStream.getAudioTracks()[0], audioStream);
+  } else {
+    const srcAudio = cam.getAudioTracks()[0];
+    if (srcAudio) pc.addTrack(srcAudio, cam);
+  }
+}
+
+function updateVideoBtnUI() {
+  const btn = document.getElementById('videoGoLiveBtn');
+  const status = document.getElementById('videoTxStatus');
+  if (btn) {
+    btn.textContent = vidTx.active ? '⏹️ Detener video en vivo' : '📹 Transmitir video en vivo';
+    btn.className = `btn ${vidTx.active ? 'btn-danger' : 'btn-primary'}`;
+  }
+  if (status) {
+    status.textContent = vidTx.active ? '🔴 En vivo para los oyentes' : '';
+    status.style.color = vidTx.active ? 'var(--green)' : 'var(--text-secondary)';
   }
 }
 
