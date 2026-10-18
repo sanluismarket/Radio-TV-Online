@@ -12,7 +12,7 @@ const SUPABASE_URL = 'https://jglhqfwervwuidgunobt.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_5wLJTr60u0q-CNNjr2xggA_BnX-OCxS';
 
 // Versión de la app — si cambia en el servidor, la página se recarga sola
-const APP_VERSION = '2026-10-18.3';
+const APP_VERSION = '2026-10-18.4';
 
 // Inicializar cliente de Supabase
 const { createClient } = supabase;

@@ -109,14 +109,14 @@ async function initDashboard(user) {
   const loggedEl = document.getElementById('loggedAsText');
   if (loggedEl) loggedEl.textContent = user.email || 'Locutor';
 
-  // Cargar datos
-  await loadBroadcastConfig();
-  await loadNowPlayingForm();
-  await loadBroadcastChat();
-  await loadStats();
-
-  // Reproductor de música del panel (sin pantalla)
+  // Reproductor de música del panel PRIMERO (si algo más falla, la música sigue funcionando)
   initPanelPlayer();
+
+  // Cargar datos (cada una con try/catch: un fallo no corta las demás)
+  try { await loadBroadcastConfig(); } catch (e) { console.error('Config:', e); }
+  try { await loadNowPlayingForm(); } catch (e) { console.error('Now playing:', e); }
+  try { await loadBroadcastChat(); } catch (e) { console.error('Chat:', e); }
+  try { await loadStats(); } catch (e) { console.error('Stats:', e); }
 
   // Realtime (al final: si falla, no corta la inicialización)
   try { setupBroadcastRealtime(); } catch (e) { console.error('Realtime chat:', e); }
@@ -1041,7 +1041,10 @@ function stopSignalMonitor() {
 function initPanelPlayer() {
   panelPlayer.el = document.getElementById('panelAudioEl');
   const input = document.getElementById('musicFiles');
-  if (input) input.addEventListener('change', onMusicFiles);
+  if (input && !input.dataset.wired) {
+    input.dataset.wired = '1';
+    input.addEventListener('change', onMusicFiles);
+  }
   if (panelPlayer.el) {
     panelPlayer.el.addEventListener('ended', () => playPanelTrack(panelPlayer.index + 1));
     panelPlayer.el.addEventListener('play', () => {
@@ -1056,6 +1059,15 @@ function initPanelPlayer() {
     });
   }
 }
+
+// El selector de MP3 funciona apenas carga la página (sin esperar al login)
+(function wireMusicInputNow() {
+  const input = document.getElementById('musicFiles');
+  if (input && !input.dataset.wired) {
+    input.dataset.wired = '1';
+    input.addEventListener('change', onMusicFiles);
+  }
+})();
 
 function onMusicFiles(e) {
   const list = Array.from(e.target.files || []);
