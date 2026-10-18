@@ -115,11 +115,11 @@ async function initDashboard(user) {
   await loadBroadcastChat();
   await loadStats();
 
-  // Realtime
-  setupBroadcastRealtime();
-
   // Reproductor de música del panel (sin pantalla)
   initPanelPlayer();
+
+  // Realtime (al final: si falla, no corta la inicialización)
+  try { setupBroadcastRealtime(); } catch (e) { console.error('Realtime chat:', e); }
 }
 
 async function loadBroadcastConfig() {
@@ -698,7 +698,10 @@ async function changePassword() {
 // REALTIME
 // ─────────────────────────────────────────────
 
+let _broadcastRealtimeReady = false;
 function setupBroadcastRealtime() {
+  if (_broadcastRealtimeReady) return;
+  _broadcastRealtimeReady = true;
   // Chat en tiempo real
   subscribeToChatRealtime((newMsg) => {
     appendBroadcastMessage(newMsg, true);
