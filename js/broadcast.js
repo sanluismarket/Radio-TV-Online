@@ -995,52 +995,68 @@ async function listMicrophones() {
 // 🖥️ AUDIO DEL SISTEMA (Screen Share + audio)
 // ─────────────────────────────────────────────
 
-async function startSystemAudio() {
-  try {
-    // getDisplayMedia captura pantalla + audio del sistema
-    const stream = await navigator.mediaDevices.getDisplayMedia({
-      video: true,   // necesario para que Chrome lo permita
-      audio: {
-        echoCancellation: false,
-        noiseSuppression: false,
-        sampleRate: 44100,
+async function startSystemAudio(maxAttempts = 3) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    let stream;
+    try {
+      // getDisplayMedia captura pantalla + audio del sistema
+      stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,   // necesario para que Chrome lo permita
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          sampleRate: 44100,
+        }
+      });
+    } catch (err) {
+      if (err.name === 'NotAllowedError') {
+        showToast('❌ Permiso denegado para compartir pantalla', 'error');
+      } else {
+        showToast('❌ Error: ' + err.message, 'error');
       }
-    });
-
-    // Verificar si tiene pista de audio
-    const audioTracks = stream.getAudioTracks();
-    if (audioTracks.length === 0) {
-      stream.getTracks().forEach(t => t.stop());
-      showToast(
-        '⚠️ No se capturó audio. Al compartir pantalla, asegurate de marcar "Compartir audio del sistema"',
-        'warning',
-        6000
-      );
       return false;
     }
 
-    audioState.sysStream = stream;
+    // Verificar si tiene pista de audio
+    const audioTracks = stream.getAudioTracks().filter(t => t.readyState === 'live');
+    if (audioTracks.length > 0) {
+      audioState.sysStream = stream;
 
-    // Cuando el usuario detiene desde el navegador
-    stream.getVideoTracks()[0].addEventListener('ended', () => {
-      stopSystemAudio();
-    });
+      // Cuando el usuario detiene desde el navegador
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.addEventListener('ended', () => {
+          stopSystemAudio();
+        });
+      }
 
-    document.getElementById('startSysAudioBtn').style.display = 'none';
-    document.getElementById('stopSysAudioBtn').style.display = 'inline-flex';
+      document.getElementById('startSysAudioBtn').style.display = 'none';
+      document.getElementById('stopSysAudioBtn').style.display = 'inline-flex';
 
-    showAudioMonitor('🖥️ Audio del sistema activo');
-    showToast('🖥️ Audio del sistema capturado', 'success');
-    return true;
-
-  } catch(err) {
-    if (err.name === 'NotAllowedError') {
-      showToast('❌ Permiso denegado para compartir pantalla', 'error');
-    } else {
-      showToast('❌ Error: ' + err.message, 'error');
+      showAudioMonitor('🖥️ Audio del sistema activo');
+      showToast('🖥️ Audio del sistema capturado', 'success');
+      return true;
     }
-    return false;
+
+    // Sin audio: Chrome NO captura audio al compartir una VENTANA
+    stream.getTracks().forEach(t => t.stop());
+
+    if (attempt === maxAttempts) {
+      showToast(
+        '❌ No se capturó audio. Volvé a compartir eligiendo una PESTAÑA o la PANTALLA COMPLETA (no una ventana) y marcá "Compartir audio del sistema".',
+        'error',
+        9000
+      );
+      return false;
+    }
+    showToast(
+      '⚠️ La ventana compartida no tiene audio. Reintentá: elegí "Pestaña" o "Pantalla completa" y marcá "Compartir audio del sistema".',
+      'warning',
+      7000
+    );
+    await new Promise(r => setTimeout(r, 500));
   }
+  return false;
 }
 
 function stopSystemAudio() {

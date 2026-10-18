@@ -138,7 +138,7 @@ function formatTimeAgo(date) {
 // PLAYER CONTROLS
 // ─────────────────────────────────────────────
 
-function togglePlay() {
+function togglePlay(refreshed) {
   const player = document.getElementById('audioPlayer');
   const btn    = document.getElementById('playBtn');
 
@@ -200,6 +200,23 @@ function togglePlay() {
   }
 
   if (!isLive) {
+    // Estado posiblemente desactualizado → consultamos la base una vez
+    // antes de decirle al oyente que la radio está apagada
+    if (!refreshed && !DEMO_MODE) {
+      getStationConfig().then(cfg => {
+        if (cfg && cfg.is_live) {
+          state.stationConfig = cfg;
+          state.streamUrl = cfg.stream_url || '';
+          setLiveStatus(true);
+          togglePlay(true);
+        } else {
+          showToast('📴 La radio aún no está en el aire. Esperá a que el locutor transmita.', 'warning');
+        }
+      }).catch(() => {
+        showToast('📴 La radio aún no está en el aire. Esperá a que el locutor transmita.', 'warning');
+      });
+      return;
+    }
     showToast('📴 La radio aún no está en el aire. Esperá a que el locutor transmita.', 'warning');
   } else {
     showToast('⚠️ El locutor aún no ha configurado el stream', 'warning');
