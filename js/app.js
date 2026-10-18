@@ -732,7 +732,7 @@ const vidRx = {
 function joinVideoChannel() {
   if (DEMO_MODE || vidRx.channel) return;
 
-  const ch = supabase.channel('radio_video', {
+  const ch = db.channel('radio_video', {
     config: { presence: { key: vidRx.viewerId }, broadcast: { self: false } }
   });
 

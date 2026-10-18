@@ -1391,7 +1391,7 @@ async function toggleVideoBroadcast() {
       return;
     }
 
-    const ch = supabase.channel('radio_video', {
+    const ch = db.channel('radio_video', {
       config: { presence: { key: 'locutor' }, broadcast: { self: false } }
     });
     ch.on('broadcast', { event: 'signal' }, ({ payload }) => hostOnSignal(payload));
@@ -1417,7 +1417,7 @@ function stopVideoBroadcast(msg) {
   vidTx.peers.clear();
   if (vidTx.channel) {
     try { vidTx.channel.untrack(); } catch (e) { /* ignore */ }
-    try { supabase.removeChannel(vidTx.channel); } catch (e) { /* ignore */ }
+    try { db.removeChannel(vidTx.channel); } catch (e) { /* ignore */ }
     vidTx.channel = null;
   }
   updateVideoBtnUI();
