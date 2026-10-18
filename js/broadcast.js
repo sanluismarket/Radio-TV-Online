@@ -924,7 +924,7 @@ function ensureMixGraph() {
 function getBroadcastStream() {
   const micLive  = !!(audioState.micStream  && audioState.micStream.getAudioTracks().some(t => t.readyState === 'live'));
   const sysLive  = !!(audioState.sysStream  && audioState.sysStream.getAudioTracks().some(t => t.readyState === 'live'));
-  const playerLive = !!(audioState.playerPlaying && panelPlayer.el && !panelPlayer.el.paused);
+  const playerLive = !!(panelPlayer.el && !panelPlayer.el.paused && panelPlayer.index >= 0);
   if (!micLive && !sysLive && !playerLive) return null;
 
   ensureMixGraph();
@@ -954,7 +954,7 @@ function detachMixSource(id) {
 
 function updateAudioMonitorLabel() {
   const parts = [];
-  if (audioState.playerPlaying) parts.push('🎵 Música del panel');
+  if (panelPlayer.el && !panelPlayer.el.paused) parts.push('🎵 Música del panel');
   if (audioState.sysStream)     parts.push('🖥️ Audio de la PC');
   if (audioState.micStream)     parts.push('🎙️ Micrófono');
   if (parts.length) showAudioMonitor(parts.join(' + '));
