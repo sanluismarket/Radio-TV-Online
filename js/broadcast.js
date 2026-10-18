@@ -721,8 +721,36 @@ const cameraState = {
   isScreen: false,
 };
 
+const IS_MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+function setCameraError(title, desc) {
+  const ph = document.getElementById('cameraPlaceholder');
+  if (!ph) return;
+  ph.style.display = 'flex';
+  ph.innerHTML =
+    '<span style="font-size:3rem;">⚠️</span>' +
+    '<p style="font-size:0.95rem; font-weight:600; color:#ef4444;">' + title + '</p>' +
+    '<p style="font-size:0.78rem; text-align:center; max-width:280px; color:var(--text-muted);">' + desc + '</p>';
+}
+
+function resetCameraPlaceholder() {
+  const ph = document.getElementById('cameraPlaceholder');
+  if (!ph) return;
+  ph.style.display = 'flex';
+  const screenNote = IS_MOBILE
+    ? 'En celular usá Chrome o Safari (no Instagram/Facebook). Compartir pantalla solo funciona en PC.'
+    : 'Sin webcam podés usar "🖥️ Compartir pantalla" para transmitir video.';
+  ph.innerHTML =
+    '<span style="font-size:3rem;">📷</span>' +
+    '<p style="font-size:0.9rem;">Cámara apagada</p>' +
+    '<p style="font-size:0.78rem; text-align:center; max-width:280px;">Presioná "📹 Activar Cámara" para ver el preview.<br>' + screenNote + '</p>';
+}
+
 async function startCamera() {
   try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error('Este navegador no permite usar la cámara. Abrí la web en Chrome o Safari.');
+    }
     const constraints = {
       video: {
         deviceId: cameraState.deviceId ? { exact: cameraState.deviceId } : undefined,
@@ -739,33 +767,41 @@ async function startCamera() {
     const video = document.getElementById('cameraVideo');
     video.srcObject = stream;
     video.style.display = 'block';
+    try { await video.play(); } catch (e) { /* autoplay puede requerir gesto en algunos móviles */ }
 
-    // Ocultar placeholder, mostrar overlay
     document.getElementById('cameraPlaceholder').style.display = 'none';
     document.getElementById('cameraOnAirOverlay').style.display = 'block';
     document.getElementById('mirrorBtn').style.display = 'block';
 
-    // Alternar botones
     document.getElementById('startCameraBtn').style.display = 'none';
     document.getElementById('stopCameraBtn').style.display = 'inline-flex';
     document.getElementById('screenshotBtn').style.display = 'inline-flex';
 
-    // Aplicar espejo si estaba activo
     if (cameraState.mirrored) video.style.transform = 'scaleX(-1)';
 
     showToast('📹 Cámara activada correctamente', 'success');
 
-    // Listar cámaras disponibles
-    await refreshCameraList();
+    try { await refreshCameraList(); } catch (e) { /* ignore */ }
   } catch (err) {
     console.error('Error de cámara:', err);
+    let title = 'Error al iniciar cámara';
+    let desc = err.message || '';
     if (err.name === 'NotAllowedError') {
-      showToast('❌ Permiso de cámara denegado. Habilitalo en el navegador.', 'error', 5000);
+      title = 'Permiso de cámara denegado';
+      desc = IS_MOBILE
+        ? 'Tocá el candado 🔒 de la dirección → Permiso cámara → Permitir, y recargá la página. Si entraste desde Instagram/Facebook, abrí la web en Chrome o Safari del celular.'
+        : 'Hacé click en el candado 🔒 de la barra de direcciones → Permiso cámara → Permitir, y recargá la página.';
     } else if (err.name === 'NotFoundError') {
-      showToast('❌ No se encontró ninguna cámara', 'error');
-    } else {
-      showToast('❌ Error al iniciar cámara: ' + err.message, 'error');
+      title = 'No se encontró ninguna cámara';
+      desc = IS_MOBILE
+        ? 'Este celular no detectó cámara. Probá abrir la web en Chrome o Safari (no dentro de Instagram/Facebook).'
+        : 'No hay webcam conectada. Conectá una webcam o usá "🖥️ Compartir pantalla" para transmitir video igual.';
+    } else if (err.name === 'NotReadableError') {
+      title = 'La cámara está en uso';
+      desc = 'Otra aplicación (Zoom, Teams, etc.) la está usando. Cerrala y volvé a intentar.';
     }
+    setCameraError(title, desc);
+    showToast('❌ ' + title, 'error', 5000);
   }
 }
 
@@ -783,7 +819,7 @@ function stopCamera() {
   const video = document.getElementById('cameraVideo');
   video.srcObject = null;
 
-  document.getElementById('cameraPlaceholder').style.display = 'flex';
+  resetCameraPlaceholder();
   document.getElementById('cameraOnAirOverlay').style.display = 'none';
   document.getElementById('mirrorBtn').style.display = 'none';
   document.getElementById('startCameraBtn').style.display = 'inline-flex';
@@ -1333,6 +1369,10 @@ function hideAudioMonitor() {
 
 async function startScreenVideo() {
   try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+      showToast('🖥️ Compartir pantalla solo funciona en PC (Chrome/Edge). En celular usá la cámara.', 'warning', 5000);
+      return;
+    }
     const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
     if (cameraState.stream && cameraState.stream !== stream) {
       cameraState.stream.getTracks().forEach(t => t.stop());
@@ -1346,6 +1386,7 @@ async function startScreenVideo() {
     video.style.display = 'block';
     video.style.transform = 'none';
     cameraState.mirrored = false;
+    try { await video.play(); } catch (e) { /* ignore */ }
 
     document.getElementById('cameraPlaceholder').style.display = 'none';
     document.getElementById('cameraOnAirOverlay').style.display = 'block';
@@ -1359,11 +1400,26 @@ async function startScreenVideo() {
 
     showToast('🖥️ Pantalla compartida — ya podés transmitir el video en vivo', 'success');
   } catch (err) {
+    console.error('Error compartiendo pantalla:', err);
     if (err.name === 'NotAllowedError') {
       showToast('❌ Permiso denegado para compartir pantalla', 'error');
+      setCameraError('Permiso denegado', 'Aceptá la ventana del navegador para compartir la pantalla.');
     } else {
       showToast('❌ ' + err.message, 'error');
+      setCameraError('No se pudo compartir la pantalla', err.message || 'Intentá de nuevo.');
     }
+  }
+}
+
+if (IS_MOBILE) {
+  const applyMobileUI = () => {
+    const screenBtn = document.getElementById('startScreenBtn');
+    if (screenBtn) screenBtn.style.display = 'none';
+  };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', applyMobileUI);
+  } else {
+    applyMobileUI();
   }
 }
 
