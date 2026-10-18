@@ -80,6 +80,7 @@ async function doLogin() {
 async function doLogout() {
   if (confirm('¿Seguro que querés salir del panel?')) {
     if (broadcastState.isLive) {
+      stopWebBroadcast();
       await setLiveDB(false);
     }
     await signOut();
@@ -87,6 +88,14 @@ async function doLogout() {
     window.location.href = 'index.html';
   }
 }
+
+// Al cerrar la pestaña estando en aire → cortar transmisión
+window.addEventListener('pagehide', () => {
+  if (broadcastState.isLive) {
+    stopWebBroadcast();
+    setLiveDB(false);
+  }
+});
 
 // ─────────────────────────────────────────────
 // DASHBOARD
@@ -172,18 +181,195 @@ function showTab(tabId) {
 // ─────────────────────────────────────────────
 
 async function toggleBroadcast() {
-  broadcastState.isLive = !broadcastState.isLive;
-  await setLiveDB(broadcastState.isLive);
-  updateBroadcastStatus(broadcastState.isLive);
+  if (!broadcastState.isLive) {
+    // ── IR AL AIRE ──
+    const config = broadcastState.currentConfig || {};
+    const externalStream = (config.stream_url || '').trim();
 
-  if (broadcastState.isLive) {
+    // Sin URL de stream externo → transmitir desde el navegador
+    if (!DEMO_MODE && !externalStream) {
+      const ok = await startWebBroadcast();
+      if (!ok) return;
+    }
+
+    broadcastState.isLive = true;
+    await setLiveDB(true);
+    updateBroadcastStatus(true);
     broadcastState.onAirStartTime = Date.now();
     startOnAirTimer();
-    showToast('🔴 ¡Ahora estás en el AIRE!', 'success', 4000);
+
+    if (webTx.active) {
+      showToast('🔴 ¡En el aire! Transmitiendo desde este navegador — mantené la pestaña abierta', 'success', 6000);
+    } else {
+      showToast('🔴 ¡Ahora estás en el Aire!', 'success', 4000);
+    }
   } else {
+    // ── CORTAR TRANSMISIÓN ──
+    broadcastState.isLive = false;
+    stopWebBroadcast();
+    await setLiveDB(false);
+    updateBroadcastStatus(false);
     stopOnAirTimer();
     showToast('⏹️ Transmisión finalizada', 'info');
   }
+}
+
+// ─────────────────────────────────────────────
+// 📡 TRANSMISIÓN WEB (audio del navegador → oyentes)
+// ─────────────────────────────────────────────
+
+const webTx = {
+  channel: null,
+  recorder: null,
+  source: null,
+  header: null,
+  mimeType: '',
+  epoch: 0,
+  seq: 0,
+  active: false,
+};
+
+function pickRecorderMime() {
+  if (typeof MediaRecorder === 'undefined') return '';
+  const candidates = [
+    'audio/mp4;codecs=mp4a.40.2',
+    'audio/mp4',
+    'audio/webm;codecs=opus',
+    'audio/webm',
+  ];
+  for (const c of candidates) {
+    try { if (MediaRecorder.isTypeSupported(c)) return c; } catch (e) { /* seguir */ }
+  }
+  return '';
+}
+
+function getActiveAudioSource() {
+  for (const s of [audioState.sysStream, audioState.micStream]) {
+    if (!s) continue;
+    const t = s.getAudioTracks().find(t => t.readyState === 'live');
+    if (t) return s;
+  }
+  return null;
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve((fr.result || '').split(',')[1] || '');
+    fr.readAsDataURL(blob);
+  });
+}
+
+async function startWebBroadcast() {
+  const mimeType = pickRecorderMime();
+  if (!mimeType) {
+    showToast('❌ Tu navegador no soporta la transmisión de audio. Usá Chrome o Edge.', 'error', 6000);
+    return false;
+  }
+
+  // Buscar fuente de audio activa (sistema o micrófono)
+  let source = getActiveAudioSource();
+  if (!source) {
+    showToast('🖥️ Compartí tu pantalla marcando "Compartir audio del sistema"...', 'info', 7000);
+    try {
+      await startSystemAudio();
+    } catch (e) { /* cancelado */ }
+    source = getActiveAudioSource();
+  }
+  if (!source) {
+    showToast('❌ No se capturó audio. Activá "🖥️ Capturar Audio PC" (y marcá compartir audio) o el micrófono en la pestaña Audio, y volvé a probar.', 'error', 9000);
+    return false;
+  }
+
+  let recorder;
+  try {
+    recorder = new MediaRecorder(source, { mimeType, audioBitsPerSecond: 64000 });
+  } catch (e) {
+    try {
+      recorder = new MediaRecorder(source);
+    } catch (e2) {
+      showToast('❌ No se pudo iniciar la captura de audio: ' + e2.message, 'error');
+      return false;
+    }
+  }
+
+  webTx.recorder = recorder;
+  webTx.source = source;
+  webTx.mimeType = recorder.mimeType || mimeType;
+  webTx.header = null;
+  webTx.epoch += 1;
+  webTx.seq = 0;
+  webTx.active = true;
+
+  // Canal realtime de audio
+  const ch = db.channel('radio_audio');
+  ch.on('broadcast', { event: 'need_header' }, () => {
+    if (!webTx.active || !webTx.header) return;
+    ch.send({ type: 'broadcast', event: 'meta', payload: { m: webTx.mimeType, e: webTx.epoch } });
+    ch.send({ type: 'broadcast', event: 'header', payload: { e: webTx.epoch, d: webTx.header } });
+  });
+  await ch.subscribe((status) => {
+    if (status === 'SUBSCRIBED') console.log('📻 radio_audio: canal de transmisión activo');
+  });
+  webTx.channel = ch;
+
+  recorder.ondataavailable = async (ev) => {
+    if (!ev.data || ev.data.size === 0 || !webTx.active) return;
+    try {
+      const b64 = await blobToBase64(ev.data);
+      if (!b64 || !webTx.active) return;
+      if (!webTx.header) {
+        webTx.header = b64;
+        ch.send({ type: 'broadcast', event: 'meta', payload: { m: webTx.mimeType, e: webTx.epoch } });
+        ch.send({ type: 'broadcast', event: 'header', payload: { e: webTx.epoch, d: b64 } });
+      }
+      ch.send({ type: 'broadcast', event: 'chunk', payload: { e: webTx.epoch, s: webTx.seq++, d: b64 } });
+    } catch (e) {
+      console.error('Error enviando chunk de audio:', e);
+    }
+  };
+
+  recorder.onerror = () => {
+    showToast('❌ Error en la captura de audio', 'error');
+    forceEndBroadcast('❌ La captura de audio falló');
+  };
+
+  // Si el navegador corta la fuente (ej: "Dejar de compartir")
+  source.getAudioTracks().forEach(t => {
+    t.addEventListener('ended', () => {
+      if (webTx.active) forceEndBroadcast('❌ Se detuvo la fuente de audio — transmission finalizada');
+    }, { once: true });
+  });
+
+  recorder.start(2500);
+  return true;
+}
+
+function stopWebBroadcast() {
+  webTx.active = false;
+  try {
+    if (webTx.recorder && webTx.recorder.state !== 'inactive') webTx.recorder.stop();
+  } catch (e) { /* ya detenido */ }
+  webTx.recorder = null;
+  webTx.source = null;
+  if (webTx.channel) {
+    try {
+      webTx.channel.send({ type: 'broadcast', event: 'end', payload: { e: webTx.epoch } });
+    } catch (e) { /* sin conexión */ }
+    try { db.removeChannel(webTx.channel); } catch (e) { /* ignore */ }
+    webTx.channel = null;
+  }
+  webTx.header = null;
+}
+
+async function forceEndBroadcast(reason) {
+  if (!broadcastState.isLive && !webTx.active) return;
+  broadcastState.isLive = false;
+  stopWebBroadcast();
+  try { await setLiveDB(false); } catch (e) { /* ignore */ }
+  updateBroadcastStatus(false);
+  stopOnAirTimer();
+  showToast(reason, 'error', 7000);
 }
 
 async function setLiveDB(isLive) {
@@ -233,6 +419,17 @@ async function saveStreamUrl() {
   if (ok) {
     broadcastState.currentConfig = { ...config, stream_url: url };
     showToast('✅ URL guardada correctamente', 'success');
+  }
+}
+
+async function clearStreamUrl() {
+  const urlInput = document.getElementById('streamUrlInput');
+  if (urlInput) urlInput.value = '';
+  const config = broadcastState.currentConfig || {};
+  const ok = await saveStationConfigDB({ ...config, stream_url: '' });
+  if (ok) {
+    broadcastState.currentConfig = { ...config, stream_url: '' };
+    showToast('🧹 URL quitada — la radio ahora transmite desde esta web', 'success', 5000);
   }
 }
 
@@ -731,6 +928,7 @@ async function startMicrophone() {
 }
 
 function stopMicrophone() {
+  const wasTxSource = webTx.active && webTx.source === audioState.micStream;
   if (audioState.micStream) {
     audioState.micStream.getTracks().forEach(t => t.stop());
     audioState.micStream = null;
@@ -752,6 +950,8 @@ function stopMicrophone() {
 
   hideAudioMonitor();
   showToast('⏹️ Micrófono apagado', 'info');
+
+  if (wasTxSource) forceEndBroadcast('⏹️ Micrófono apagado — transmission finalizada');
 }
 
 function startMicLevelMeter() {
@@ -816,7 +1016,7 @@ async function startSystemAudio() {
         'warning',
         6000
       );
-      return;
+      return false;
     }
 
     audioState.sysStream = stream;
@@ -831,6 +1031,7 @@ async function startSystemAudio() {
 
     showAudioMonitor('🖥️ Audio del sistema activo');
     showToast('🖥️ Audio del sistema capturado', 'success');
+    return true;
 
   } catch(err) {
     if (err.name === 'NotAllowedError') {
@@ -838,10 +1039,12 @@ async function startSystemAudio() {
     } else {
       showToast('❌ Error: ' + err.message, 'error');
     }
+    return false;
   }
 }
 
 function stopSystemAudio() {
+  const wasTxSource = webTx.active && webTx.source === audioState.sysStream;
   if (audioState.sysStream) {
     audioState.sysStream.getTracks().forEach(t => t.stop());
     audioState.sysStream = null;
@@ -852,6 +1055,8 @@ function stopSystemAudio() {
 
   hideAudioMonitor();
   showToast('⏹️ Captura de audio del sistema detenida', 'info');
+
+  if (wasTxSource) forceEndBroadcast('⏹️ Audio del sistema apagado — transmission finalizada');
 }
 
 function showAudioMonitor(label) {

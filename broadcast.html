@@ -118,13 +118,19 @@
           <!-- Stream URL Card -->
           <div class="card mb-24">
             <div class="card-subtitle">🔗 URL del Stream</div>
+            <div style="background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.25); border-radius:10px; padding:12px 14px; margin-bottom:14px;">
+              <p style="font-size:0.83rem; color:var(--text-secondary); line-height:1.6;">
+                ✅ <strong style="color:var(--green);">Transmitís desde esta web:</strong> dejá la URL <strong>vacía</strong>. El audio de tu PC (o micrófono) se envía a los oyentes directamente desde el navegador — nada más que configurar.
+              </p>
+            </div>
             <div class="form-group">
-              <label class="form-label">URL de streaming (Icecast / Shoutcast / YouTube)</label>
-              <input type="url" class="form-input" id="streamUrlInput" placeholder="http://tu-servidor:8000/stream" />
+              <label class="form-label">URL externa (Opcional: Icecast / Shoutcast / OBS)</label>
+              <input type="url" class="form-input" id="streamUrlInput" placeholder="Dejá vacío si transmitís desde la web" />
             </div>
             <div style="display:flex; gap:10px; flex-wrap:wrap;">
               <button class="btn btn-primary" onclick="saveStreamUrl()">💾 Guardar URL</button>
               <button class="btn btn-secondary" onclick="testStream()">🔊 Probar Stream</button>
+              <button class="btn btn-secondary" onclick="clearStreamUrl()">🧹 Quitar URL (transmitir desde la web)</button>
             </div>
           </div>
 
@@ -134,7 +140,7 @@
             <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px;">
               <div>
                 <h3 style="font-family:var(--font-main); font-size:1.3rem; margin-bottom:4px;">Estado de la Transmisión</h3>
-                <p class="text-secondary" style="font-size:0.875rem;">Presioná "Ir al Aire" para comenzar a transmitir en vivo</p>
+                <p class="text-secondary" style="font-size:0.875rem;">Presioná "Ir al Aire" y el audio de tu PC se transmite a todos los oyentes. Mantené esta pestaña abierta.</p>
               </div>
               <button class="btn btn-primary btn-lg" id="bigGoLiveBtn" onclick="toggleBroadcast()">
                 📡 Ir al Aire

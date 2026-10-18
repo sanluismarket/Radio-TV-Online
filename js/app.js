@@ -7,6 +7,7 @@
 const state = {
   isPlaying: false,
   streamUrl: '',
+  playbackMode: null, // 'url' | 'web'
   stationConfig: null,
   chatMessages: [],
   demoMessages: [],
@@ -141,21 +142,30 @@ function togglePlay() {
   const player = document.getElementById('audioPlayer');
   const btn    = document.getElementById('playBtn');
 
-  if (!state.streamUrl) {
-    showToast('⚠️ El locutor aún no ha configurado el stream', 'warning');
-    return;
-  }
+  const isLive   = state.stationConfig?.is_live;
+  const hasUrl   = !!state.streamUrl;
+  const canWebLive = !hasUrl && isLive && !DEMO_MODE;
 
   if (state.isPlaying) {
-    player.pause();
-    player.src = '';
+    if (state.playbackMode === 'web') {
+      stopWebPlayback();
+    } else {
+      player.pause();
+      player.src = '';
+    }
     state.isPlaying = false;
+    state.playbackMode = null;
     btn.textContent = '▶';
     pauseWave();
     state.listenerCount = Math.max(0, state.listenerCount - 1);
     updateListenerUI();
     showToast('Reproducción pausada', 'info');
-  } else {
+    return;
+  }
+
+  if (hasUrl) {
+    // ── Stream externo (Icecast / Shoutcast) ──
+    state.playbackMode = 'url';
     player.src = state.streamUrl;
     player.volume = document.getElementById('volumeSlider').value / 100;
     player.play()
@@ -169,8 +179,271 @@ function togglePlay() {
       })
       .catch(err => {
         console.error('Error reproduciendo:', err);
+        state.playbackMode = null;
         showToast('No se pudo conectar al stream. Verificá la URL.', 'error');
       });
+    return;
+  }
+
+  if (canWebLive) {
+    // ── Transmisión web en vivo (Supabase Realtime) ──
+    state.playbackMode = 'web';
+    state.isPlaying = true;
+    btn.textContent = '⏸';
+    playWave();
+    state.listenerCount++;
+    updateListenerUI();
+    player.volume = document.getElementById('volumeSlider').value / 100;
+    startWebPlayback();
+    showToast('📡 Conectado a la radio en vivo', 'success');
+    return;
+  }
+
+  if (!isLive) {
+    showToast('📴 La radio aún no está en el aire. Esperá a que el locutor transmita.', 'warning');
+  } else {
+    showToast('⚠️ El locutor aún no ha configurado el stream', 'warning');
+  }
+}
+
+// ─────────────────────────────────────────────
+// 📡 RECEPCIÓN DE TRANSMISIÓN WEB (oyente)
+// ─────────────────────────────────────────────
+
+const rx = {
+  channel: null,
+  ms: null,
+  sb: null,
+  mime: '',
+  epoch: null,
+  initialized: false,
+  headerB64: null,
+  headerAppended: false,
+  queue: [],
+  lastChunkAt: 0,
+  watchdog: null,
+  playRequested: false,
+};
+
+function base64ToUint8(b64) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+function startWebPlayback() {
+  if (rx.channel) return;
+  rx.playRequested = true;
+  rx.lastChunkAt = Date.now();
+
+  const ch = db.channel('radio_audio');
+  rx.channel = ch;
+  ch
+    .on('broadcast', { event: 'meta' },   (m) => handleRxMeta(m.payload))
+    .on('broadcast', { event: 'header' }, (m) => handleRxHeader(m.payload))
+    .on('broadcast', { event: 'chunk' },  (m) => handleRxChunk(m.payload))
+    .on('broadcast', { event: 'end' },    (m) => handleRxEnd(m.payload))
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED' && rx.channel) {
+        rx.channel.send({ type: 'broadcast', event: 'need_header', payload: {} });
+        startRxWatchdog();
+      }
+    });
+}
+
+function handleRxMeta(p) {
+  if (!p || !p.m) return;
+  rx.lastChunkAt = Date.now();
+
+  // Misma transmisión ya en curso o inicializando → no recrear nada
+  if (rx.epoch === p.e && rx.ms) return;
+
+  // Nuevo ciclo de transmisión (primera vez o el locutor reinició)
+  rx.mime = p.m;
+  rx.epoch = p.e;
+  rx.initialized = false;
+  rx.headerB64 = null;
+  rx.headerAppended = false;
+  rx.queue = [];
+
+  const player = document.getElementById('audioPlayer');
+  if (!player) return;
+
+  // Recrear MediaSource
+  try {
+    if (rx.ms && rx.ms.readyState === 'open') { try { rx.ms.endOfStream(); } catch (e) {} }
+    if (player.src && player.src.startsWith('blob:')) URL.revokeObjectURL(player.src);
+  } catch (e) { /* ignore */ }
+
+  const myMs = new MediaSource();
+  rx.ms = myMs;
+  player.src = URL.createObjectURL(myMs);
+
+  myMs.addEventListener('sourceopen', () => {
+    if (rx.ms !== myMs || rx.sb) return; // fue reemplazado
+    try {
+      rx.sb = myMs.addSourceBuffer(rx.mime);
+      rx.sb.mode = 'segments';
+      rx.sb.addEventListener('updateend', onRxUpdateEnd);
+      rx.sb.addEventListener('error', (e) => console.error('SourceBuffer error:', e));
+      rx.initialized = true;
+      if (rx.channel) rx.channel.send({ type: 'broadcast', event: 'need_header', payload: {} });
+      flushRxQueue();
+    } catch (e) {
+      console.error('No se pudo abrir el buffer de audio:', e);
+      showToast('⚠️ Tu navegador no puede reproducir esta transmisión', 'error', 6000);
+      stopWebPlayback();
+      resetPlayUI();
+    }
+  }, { once: true });
+}
+
+function handleRxHeader(p) {
+  if (!p || !p.d) return;
+  rx.lastChunkAt = Date.now();
+
+  if (rx.epoch !== null && p.e !== rx.epoch) return; // encabezado de otra transmisión
+
+  // Ya tenemos este encabezado (en cola o ya agregado) → ignorar
+  if (rx.headerB64 === p.d && (rx.headerAppended || rx.queue.includes(p.d))) return;
+
+  rx.headerB64 = p.d;
+  rx.headerAppended = false;
+  rx.queue = rx.queue.filter(x => x !== p.d);
+  rx.queue.unshift(p.d); // el encabezado SIEMPRE va primero
+  if (rx.initialized && rx.sb) flushRxQueue();
+}
+
+function handleRxChunk(p) {
+  if (!p || !p.d) return;
+  rx.lastChunkAt = Date.now();
+
+  if (rx.epoch !== null && p.e !== rx.epoch) return;
+
+  if (!rx.initialized || !rx.sb) {
+    rx.queue.push(p.d);
+    if (rx.queue.length > 60) rx.queue.shift();
+    return;
+  }
+  rx.queue.push(p.d);
+  if (rx.queue.length > 60) rx.queue.shift();
+  flushRxQueue();
+}
+
+function resetPlayUI() {
+  const btn = document.getElementById('playBtn');
+  if (btn) btn.textContent = '▶';
+  pauseWave();
+  state.isPlaying = false;
+  state.playbackMode = null;
+}
+
+function handleRxEnd(p) {
+  if (rx.epoch !== null && p && p.e !== rx.epoch) return;
+  showToast('⏹️ El locutor finalizó la transmisión', 'info');
+  stopWebPlayback();
+  resetPlayUI();
+}
+
+function flushRxQueue() {
+  if (!rx.sb || rx.sb.updating || !rx.queue.length) return;
+  const b64 = rx.queue[0];
+  try {
+    rx.sb.appendBuffer(base64ToUint8(b64));
+    rx.queue.shift();
+    if (b64 === rx.headerB64) rx.headerAppended = true;
+  } catch (e) {
+    if (e.name === 'QuotaExceededError') {
+      trimRxBuffer();
+      setTimeout(flushRxQueue, 400);
+    } else {
+      console.error('Error al agregar audio al buffer:', e);
+      rx.queue.shift();
+      showToast('⚠️ Error de reproducción del stream', 'error');
+    }
+  }
+}
+
+function trimRxBuffer() {
+  const player = document.getElementById('audioPlayer');
+  if (!rx.sb || !player) return;
+  try {
+    const b = rx.sb.buffered;
+    if (!b.length) return;
+    const target = Math.max(0, player.currentTime - 45);
+    if (target > b.start(0)) rx.sb.remove(b.start(0), target);
+  } catch (e) { /* ignore */ }
+}
+
+function onRxUpdateEnd() {
+  flushRxQueue();
+
+  const player = document.getElementById('audioPlayer');
+  if (!player || !rx.sb) return;
+  try {
+    const b = rx.sb.buffered;
+    if (!b.length) return;
+    const end = b.end(b.length - 1);
+    const start = b.start(0);
+
+    // Empezar / reanudar reproducción
+    if (rx.playRequested && player.paused) {
+      player.play().catch(() => {});
+    }
+
+    // Mantener cerca del vivo (saltar huecos o atrasos)
+    const liveEdge = Math.max(start, end - 3);
+    if (player.currentTime < start - 0.5 || player.currentTime < liveEdge - 25) {
+      try { player.currentTime = liveEdge; } catch (e) { /* ignore */ }
+    }
+
+    // Recortar buffer viejo
+    if (player.currentTime - start > 60) {
+      rx.sb.remove(start, player.currentTime - 45);
+    }
+  } catch (e) { /* ignore */ }
+}
+
+function startRxWatchdog() {
+  if (rx.watchdog) clearInterval(rx.watchdog);
+  rx.watchdog = setInterval(() => {
+    if (!rx.channel) { clearInterval(rx.watchdog); rx.watchdog = null; return; }
+    if (Date.now() - rx.lastChunkAt > 20000) {
+      showToast('⚠️ La transmisión se interrumpió', 'error');
+      stopWebPlayback();
+      resetPlayUI();
+    }
+  }, 5000);
+}
+
+function stopWebPlayback() {
+  if (rx.watchdog) { clearInterval(rx.watchdog); rx.watchdog = null; }
+  if (rx.channel) {
+    try { db.removeChannel(rx.channel); } catch (e) { /* ignore */ }
+    rx.channel = null;
+  }
+  try {
+    if (rx.sb && rx.ms && rx.ms.readyState === 'open') rx.ms.endOfStream();
+  } catch (e) { /* ignore */ }
+  rx.sb = null;
+  rx.ms = null;
+  rx.initialized = false;
+  rx.headerB64 = null;
+  rx.headerAppended = false;
+  rx.queue = [];
+  rx.epoch = null;
+  rx.mime = '';
+  rx.playRequested = false;
+
+  const player = document.getElementById('audioPlayer');
+  if (player) {
+    try {
+      player.pause();
+      if (player.src && player.src.startsWith('blob:')) URL.revokeObjectURL(player.src);
+      player.removeAttribute('src');
+      player.load();
+    } catch (e) { /* ignore */ }
   }
 }
 
