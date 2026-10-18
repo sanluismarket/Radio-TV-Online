@@ -788,10 +788,12 @@ async function startWatchingVideo() {
   pc.ontrack = (ev) => {
     vidRx.gotTrack = true;
     const v = document.getElementById('remoteVideo');
-    if (v) {
-      v.srcObject = ev.streams[0];
-      v.play().catch(() => {});
-    }
+    if (!v) return;
+    // Unificar todas las pistas (video + audio) en un solo MediaStream
+    if (!v.srcObject) v.srcObject = new MediaStream();
+    const ms = v.srcObject;
+    if (!ms.getTracks().some(t => t === ev.track)) ms.addTrack(ev.track);
+    v.play().catch(() => {});
   };
   pc.onicecandidate = (ev) => {
     if (ev.candidate) viewerSend({ type: 'ice', to: 'locutor', from: vidRx.viewerId, candidate: ev.candidate });

@@ -1479,11 +1479,13 @@ function addHostTracks(pc) {
   const videoTrack = cam.getVideoTracks()[0];
   if (videoTrack) pc.addTrack(videoTrack, cam);
 
-  // Audio: la mezcla de la radio (música + voz) si está activa, si no el de la fuente
+  // Audio: la mezcla de la radio (música + voz) si está activa, si no el de la fuente.
+  // Siempre como parte del MISMO stream "cam" para que el oyente reciba todo junto.
   let audioStream = null;
   try { audioStream = getBroadcastStream(); } catch (e) { /* ignore */ }
-  if (audioStream && audioStream.getAudioTracks()[0]) {
-    pc.addTrack(audioStream.getAudioTracks()[0], audioStream);
+  const mixAudio = audioStream && audioStream.getAudioTracks()[0];
+  if (mixAudio) {
+    pc.addTrack(mixAudio, cam);
   } else {
     const srcAudio = cam.getAudioTracks()[0];
     if (srcAudio) pc.addTrack(srcAudio, cam);
