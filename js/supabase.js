@@ -8,8 +8,8 @@
 // 4. Copiar "Project URL" y "anon public key" aquí abajo
 // ================================================
 
-const SUPABASE_URL = 'https://TU_PROYECTO.supabase.co';
-const SUPABASE_ANON_KEY = 'TU_ANON_KEY_AQUI';
+const SUPABASE_URL = 'https://jglhqfwervwuidgunobt.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_5wLJTr60u0q-CNNjr2xggA_BnX-OCxS';
 
 // Inicializar cliente de Supabase
 const { createClient } = supabase;
