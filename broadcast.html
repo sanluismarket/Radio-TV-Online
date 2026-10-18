@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Panel del Locutor — Radio TV Online</title>
+  <meta name="description" content="Panel exclusivo de transmisión para locutores autorizados." />
+  <meta name="robots" content="noindex, nofollow" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════
+       LOGIN SCREEN
+  ═══════════════════════════════════════════ -->
+  <div id="loginScreen" class="auth-wrapper">
+    <div class="auth-card">
+      <div class="auth-logo">
+        <img src="assets/logo.png" alt="Logo" onerror="this.style.display='none'" />
+        <h1>Panel del Locutor</h1>
+        <p>Acceso exclusivo para transmisores</p>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input type="email" class="form-input" id="loginEmail" placeholder="locutor@radio.com" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Contraseña</label>
+        <input type="password" class="form-input" id="loginPassword" placeholder="••••••••" onkeypress="if(event.key==='Enter') doLogin()" />
+      </div>
+      <button class="btn btn-primary w-full" id="loginButton" onclick="doLogin()" style="margin-top:8px;">
+        🔐 Ingresar al Panel
+      </button>
+      <p style="text-align:center; font-size:0.78rem; color:var(--text-muted); margin-top:20px;">
+        🔒 Área exclusiva. Si no tenés acceso, <a href="index.html" style="color:var(--cyan);">volvé al inicio.</a>
+      </p>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       DASHBOARD (visible after login)
+  ═══════════════════════════════════════════ -->
+  <div id="dashboard" class="hidden">
+
+    <!-- Navbar -->
+    <nav class="navbar">
+      <div class="navbar-brand">
+        <img src="assets/logo.png" alt="Logo" class="navbar-logo" onerror="this.style.display='none'" />
+        <div>
+          <span class="navbar-title">Panel del Locutor</span>
+          <span class="navbar-subtitle">Modo transmisión</span>
+        </div>
+      </div>
+      <div class="navbar-nav">
+        <div class="live-badge offline" id="broadcastStatus">
+          <span class="live-dot"></span>
+          <span id="broadcastStatusText">Offline</span>
+        </div>
+        <button class="btn btn-success" id="goLiveBtn" onclick="toggleBroadcast()" style="font-size:0.85rem; padding:8px 18px;">
+          📡 Ir al Aire
+        </button>
+        <a href="index.html" class="nav-link" target="_blank">👁️ Ver Radio</a>
+        <button class="btn btn-secondary" onclick="doLogout()" style="font-size:0.85rem; padding:8px 14px;">
+          Salir 🚪
+        </button>
+      </div>
+    </nav>
+
+    <div class="dashboard-layout">
+
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <div class="flex-between mb-24" style="padding:0 8px;">
+          <span style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px;">Menú</span>
+        </div>
+        <nav class="sidebar-nav">
+          <div class="sidebar-link active" onclick="showTab('tabTransmisión')" id="sidebarTransmisión">
+            <span class="sidebar-icon">📡</span> Transmisión
+          </div>
+          <div class="sidebar-link" onclick="showTab('tabCamara')" id="sidebarCamara">
+            <span class="sidebar-icon">📹</span> Cámara / Video
+          </div>
+          <div class="sidebar-link" onclick="showTab('tabAudio')" id="sidebarAudio">
+            <span class="sidebar-icon">🎤</span> Fuentes de Audio
+          </div>
+          <div class="sidebar-link" onclick="showTab('tabAhora')" id="sidebarAhora">
+            <span class="sidebar-icon">🎵</span> Ahora Suena
+          </div>
+          <div class="sidebar-link" onclick="showTab('tabChat')" id="sidebarChat">
+            <span class="sidebar-icon">💬</span> Chat de Oyentes
+          </div>
+          <div class="sidebar-link" onclick="showTab('tabEstadísticas')" id="sidebarEstadísticas">
+            <span class="sidebar-icon">📊</span> Estadísticas
+          </div>
+          <div class="sidebar-link" onclick="showTab('tabEstación')" id="sidebarEstación">
+            <span class="sidebar-icon">⚙️</span> Configuración
+          </div>
+        </nav>
+
+        <div style="margin-top:auto; padding-top:40px;">
+          <div class="card" style="text-align:center; padding:16px;">
+            <div style="font-size:1.5rem; margin-bottom:6px;">🎙️</div>
+            <p style="font-size:0.78rem; color:var(--text-muted);" id="loggedAsText">Locutor</p>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Main Content -->
+      <main class="dashboard-content">
+
+        <!-- ── Tab: Transmisión ── -->
+        <div id="tabTransmisión" class="tab-content">
+          <h2 style="font-family:var(--font-main); font-size:1.6rem; font-weight:800; margin-bottom:24px;">
+            📡 Control de Transmisión
+          </h2>
+
+          <!-- Stream URL Card -->
+          <div class="card mb-24">
+            <div class="card-subtitle">🔗 URL del Stream</div>
+            <div class="form-group">
+              <label class="form-label">URL de streaming (Icecast / Shoutcast / YouTube)</label>
+              <input type="url" class="form-input" id="streamUrlInput" placeholder="http://tu-servidor:8000/stream" />
+            </div>
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+              <button class="btn btn-primary" onclick="saveStreamUrl()">💾 Guardar URL</button>
+              <button class="btn btn-secondary" onclick="testStream()">🔊 Probar Stream</button>
+            </div>
+          </div>
+
+          <!-- On Air Panel -->
+          <div class="card mb-24" style="border-color: rgba(239,68,68,0.2); background:rgba(239,68,68,0.04);">
+            <div class="card-subtitle">🔴 Control de Antena</div>
+            <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px;">
+              <div>
+                <h3 style="font-family:var(--font-main); font-size:1.3rem; margin-bottom:4px;">Estado de la Transmisión</h3>
+                <p class="text-secondary" style="font-size:0.875rem;">Presioná "Ir al Aire" para comenzar a transmitir en vivo</p>
+              </div>
+              <button class="btn btn-primary btn-lg" id="bigGoLiveBtn" onclick="toggleBroadcast()">
+                📡 Ir al Aire
+              </button>
+            </div>
+            <div style="margin-top:20px; display:flex; gap:16px; flex-wrap:wrap;">
+              <div class="stat-card" style="flex:1; min-width:100px;">
+                <div class="stat-icon">⏱️</div>
+                <div class="stat-value" id="onAirTime">00:00:00</div>
+                <div class="stat-label">Tiempo en aire</div>
+              </div>
+              <div class="stat-card" style="flex:1; min-width:100px;">
+                <div class="stat-icon">👥</div>
+                <div class="stat-value" id="currentListeners">0</div>
+                <div class="stat-label">Oyentes ahora</div>
+              </div>
+              <div class="stat-card" style="flex:1; min-width:100px;">
+                <div class="stat-icon">💬</div>
+                <div class="stat-value" id="currentMessages">0</div>
+                <div class="stat-label">Mensajes hoy</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ══════════════════════════════════════════
+             Tab: Cámara / Video
+        ══════════════════════════════════════════ -->
+        <div id="tabCamara" class="tab-content hidden">
+          <h2 style="font-family:var(--font-main); font-size:1.6rem; font-weight:800; margin-bottom:24px;">
+            📹 Cámara / Video en Vivo
+          </h2>
+
+          <div style="display:grid; grid-template-columns:1fr 300px; gap:24px; align-items:start;">
+
+            <!-- Preview de cámara -->
+            <div>
+              <div class="card mb-16" style="border-color:rgba(6,182,212,0.3); background:rgba(6,182,212,0.04);">
+                <div class="card-subtitle">📹 Preview de tu cámara (solo vos lo ves)</div>
+
+                <!-- Video preview -->
+                <div style="position:relative; background:#000; border-radius:var(--radius-lg); overflow:hidden; aspect-ratio:16/9; margin-bottom:16px;" id="cameraPreviewBox">
+                  <video id="cameraVideo" autoplay muted playsinline
+                    style="width:100%; height:100%; object-fit:cover; display:block;"></video>
+                  <div id="cameraPlaceholder" style="position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; color:var(--text-muted);">
+                    <span style="font-size:3rem;">📷</span>
+                    <p style="font-size:0.9rem;">Cámara apagada</p>
+                    <p style="font-size:0.78rem; text-align:center; max-width:240px;">Presioná "Activar Cámara" para ver el preview</p>
+                  </div>
+                  <!-- ON AIR overlay -->
+                  <div id="cameraOnAirOverlay" style="display:none; position:absolute; top:12px; left:12px;">
+                    <div class="live-badge"><span class="live-dot"></span> CAM ACTIVA</div>
+                  </div>
+                  <!-- Mirror toggle -->
+                  <button id="mirrorBtn" onclick="toggleMirror()" title="Voltear imagen"
+                    style="display:none; position:absolute; top:12px; right:12px; background:rgba(0,0,0,0.5); border:none; color:white; padding:6px 10px; border-radius:8px; cursor:pointer; font-size:0.8rem;">
+                    🔄 Espejo
+                  </button>
+                </div>
+
+                <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                  <button class="btn btn-primary" id="startCameraBtn" onclick="startCamera()">
+                    📹 Activar Cámara
+                  </button>
+                  <button class="btn btn-secondary" id="stopCameraBtn" onclick="stopCamera()" style="display:none;">
+                    ⏹️ Apagar Cámara
+                  </button>
+                  <button class="btn btn-secondary" id="screenshotBtn" onclick="takeScreenshot()" style="display:none;">
+                    📸 Captura
+                  </button>
+                </div>
+              </div>
+
+              <!-- Selección de cámara -->
+              <div class="card mb-16">
+                <div class="card-subtitle">🎥 Dispositivo de cámara</div>
+                <div style="display:flex; gap:10px; align-items:end; flex-wrap:wrap;">
+                  <div style="flex:1;">
+                    <label class="form-label">Seleccionar cámara</label>
+                    <select class="form-select" id="cameraSelect" onchange="switchCamera()">
+                      <option value="">— Seleccionar dispositivo —</option>
+                    </select>
+                  </div>
+                  <button class="btn btn-secondary" onclick="refreshCameraList()" style="height:44px;">🔄 Actualizar</button>
+                </div>
+                <div style="margin-top:12px; display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
+                  <label class="form-label" style="margin:0;">Calidad:</label>
+                  <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                    <input type="radio" name="camQuality" value="720" onchange="setCamQuality(this.value)" checked /> 720p
+                  </label>
+                  <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                    <input type="radio" name="camQuality" value="1080" onchange="setCamQuality(this.value)" /> 1080p
+                  </label>
+                  <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                    <input type="radio" name="camQuality" value="480" onchange="setCamQuality(this.value)" /> 480p (ahorro)
+                  </label>
+                </div>
+              </div>
+
+              <!-- Efectos visuales -->
+              <div class="card">
+                <div class="card-subtitle">🎨 Efectos de imagen</div>
+                <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                  <button class="btn btn-secondary" onclick="applyCamFilter('none')">🎨 Normal</button>
+                  <button class="btn btn-secondary" onclick="applyCamFilter('grayscale(100%)')">⬛ B&N</button>
+                  <button class="btn btn-secondary" onclick="applyCamFilter('sepia(80%)')">🟫 Sepia</button>
+                  <button class="btn btn-secondary" onclick="applyCamFilter('contrast(1.4) brightness(1.1)')">💡 Alto contraste</button>
+                  <button class="btn btn-secondary" onclick="applyCamFilter('hue-rotate(180deg)')">🟣 Invertido</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Panel derecho: info y OBS -->
+            <div>
+              <div class="card mb-16" style="border-color:rgba(124,58,237,0.3);">
+                <div class="card-subtitle">ℹ️ ¿Cómo funciona el video?</div>
+                <p style="font-size:0.85rem; color:var(--text-secondary); line-height:1.7; margin-bottom:12px;">
+                  El preview de cámara te muestra cómo te ve el sistema para que puedas verificar encuadre e iluminación.
+                </p>
+                <p style="font-size:0.85rem; color:var(--text-secondary); line-height:1.7; margin-bottom:12px;">
+                  <strong style="color:var(--text-primary);">Para transmitir video + audio</strong> a tus oyentes, necesitás un servidor de streaming externo como:
+                </p>
+                <div style="display:flex; flex-direction:column; gap:8px;">
+                  <div style="background:rgba(124,58,237,0.1); border:1px solid rgba(124,58,237,0.2); border-radius:8px; padding:10px;">
+                    <div style="font-weight:700; font-size:0.85rem; margin-bottom:4px;">📺 YouTube Live</div>
+                    <div style="font-size:0.78rem; color:var(--text-secondary);">Gratis, global. OBS → YouTube RTMP → ponés el link del live en esta radio</div>
+                  </div>
+                  <div style="background:rgba(6,182,212,0.1); border:1px solid rgba(6,182,212,0.2); border-radius:8px; padding:10px;">
+                    <div style="font-weight:700; font-size:0.85rem; margin-bottom:4px;">📡 Icecast</div>
+                    <div style="font-size:0.78rem; color:var(--text-secondary);">Servidor propio de audio/video. Más control, requiere hosting</div>
+                  </div>
+                  <div style="background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.2); border-radius:8px; padding:10px;">
+                    <div style="font-weight:700; font-size:0.85rem; margin-bottom:4px;">🟣 Twitch</div>
+                    <div style="font-size:0.78rem; color:var(--text-secondary);">Ideal para radio con cámara. OBS → Twitch → embed en la web</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Canvas de captura -->
+              <canvas id="screenshotCanvas" style="display:none;"></canvas>
+              <div id="screenshotPreview" style="display:none;" class="card">
+                <div class="card-subtitle">📸 Última captura</div>
+                <img id="screenshotImg" style="width:100%; border-radius:8px; margin-bottom:10px;" />
+                <a id="screenshotDownload" class="btn btn-secondary w-full" download="captura-radio.png" style="text-align:center;">⬇️ Descargar</a>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- ══════════════════════════════════════════
+             Tab: Fuentes de Audio
+        ══════════════════════════════════════════ -->
+        <div id="tabAudio" class="tab-content hidden">
+          <h2 style="font-family:var(--font-main); font-size:1.6rem; font-weight:800; margin-bottom:24px;">
+            🎤 Fuentes de Audio
+          </h2>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-bottom:24px;">
+
+            <!-- Opción 1: Micrófono directo -->
+            <div class="card" style="border-color:rgba(124,58,237,0.3);">
+              <div style="font-size:2rem; margin-bottom:8px;">🎙️</div>
+              <div class="card-title">Micrófono / Voz</div>
+              <p class="text-secondary" style="font-size:0.85rem; margin:8px 0 16px;">Transmitís con tu voz en vivo. Ideal para locutor hablando al air.</p>
+              <div class="form-group">
+                <label class="form-label">Seleccionar micrófono</label>
+                <select class="form-select" id="micSelect">
+                  <option value="">— Cargando micrófonos... —</option>
+                </select>
+              </div>
+              <div style="margin-bottom:16px;">
+                <label class="form-label">Nivel de entrada</label>
+                <div style="background:rgba(255,255,255,0.05); border:1px solid var(--border); border-radius:8px; height:12px; overflow:hidden;">
+                  <div id="micLevelBar" style="height:100%; width:0%; background:var(--gradient-main); transition:width 0.1s ease; border-radius:8px;"></div>
+                </div>
+              </div>
+              <div style="display:flex; gap:10px;">
+                <button class="btn btn-primary" id="startMicBtn" onclick="startMicrophone()">
+                  🎙️ Activar Micrófono
+                </button>
+                <button class="btn btn-danger" id="stopMicBtn" onclick="stopMicrophone()" style="display:none;">
+                  ⏹️ Apagar
+                </button>
+              </div>
+            </div>
+
+            <!-- Opción 2: Audio del sistema -->
+            <div class="card" style="border-color:rgba(6,182,212,0.3);">
+              <div style="font-size:2rem; margin-bottom:8px;">🖥️</div>
+              <div class="card-title">Audio del Sistema / PC</div>
+              <p class="text-secondary" style="font-size:0.85rem; margin:8px 0 16px;">Capturá el audio que está sonando en tu PC: música, Spotify, reproductores, etc.</p>
+              <div style="background:rgba(6,182,212,0.08); border:1px solid rgba(6,182,212,0.2); border-radius:10px; padding:14px; margin-bottom:16px;">
+                <p style="font-size:0.82rem; color:var(--cyan-light); font-weight:600; margin-bottom:6px;">💡 ¿Cómo funciona?</p>
+                <p style="font-size:0.8rem; color:var(--text-secondary); line-height:1.6;">
+                  Al presionar el botón, el navegador te pide que <strong style="color:var(--text-primary);">compartas tu pantalla</strong>. En esa ventana, hay que activar también <strong style="color:var(--cyan);">"Compartir audio del sistema"</strong>. Así capturás la música de Spotify, YouTube, etc.
+                </p>
+              </div>
+              <div style="display:flex; gap:10px;">
+                <button class="btn btn-primary" id="startSysAudioBtn" onclick="startSystemAudio()" style="background:linear-gradient(135deg,#06b6d4,#10b981);">
+                  🖥️ Capturar Audio PC
+                </button>
+                <button class="btn btn-danger" id="stopSysAudioBtn" onclick="stopSystemAudio()" style="display:none;">
+                  ⏹️ Detener
+                </button>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Monitor de audio activo -->
+          <div class="card mb-24" id="audioMonitorCard" style="display:none;">
+            <div class="card-subtitle">🔊 Monitor de audio activo</div>
+            <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+              <div class="audio-wave" id="audioMonitorWave">
+                <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+                <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+                <div class="bar"></div><div class="bar"></div>
+              </div>
+              <div>
+                <div style="font-weight:700; font-size:0.95rem;" id="audioSourceLabel">Fuente activa</div>
+                <div style="font-size:0.8rem; color:var(--green);">✅ Capturando audio correctamente</div>
+              </div>
+              <div style="flex:1;"></div>
+              <select class="form-select" id="outputDeviceSelect" style="max-width:220px;">
+                <option value="">Salida: Predeterminada</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Guía OBS paso a paso -->
+          <div class="card" style="border-color:rgba(255,255,255,0.1);">
+            <div class="card-subtitle">🎬 Guía profesional: Pasar música de la PC con OBS</div>
+            <p style="font-size:0.875rem; color:var(--text-secondary); margin-bottom:20px;">Para una transmisión de radio profesional con mezcla de canciones, micrófonos y efectos, se recomienda usar OBS Studio (gratuito):</p>
+
+            <div style="display:flex; flex-direction:column; gap:16px;">
+
+              <div style="display:flex; gap:16px; align-items:flex-start;">
+                <div style="width:36px; height:36px; border-radius:50%; background:var(--gradient-main); display:flex; align-items:center; justify-content:center; font-weight:800; flex-shrink:0;">1</div>
+                <div>
+                  <div style="font-weight:700; margin-bottom:4px;">Descargar OBS Studio</div>
+                  <p style="font-size:0.82rem; color:var(--text-secondary);">Gratis en <a href="https://obsproject.com" target="_blank" style="color:var(--cyan);">obsproject.com</a>. Compatible con Windows, Mac y Linux.</p>
+                </div>
+              </div>
+
+              <div style="display:flex; gap:16px; align-items:flex-start;">
+                <div style="width:36px; height:36px; border-radius:50%; background:var(--gradient-main); display:flex; align-items:center; justify-content:center; font-weight:800; flex-shrink:0;">2</div>
+                <div>
+                  <div style="font-weight:700; margin-bottom:4px;">Agregar fuentes de audio en OBS</div>
+                  <p style="font-size:0.82rem; color:var(--text-secondary);">En OBS ir a <strong style="color:var(--text-primary);">Audio → Configuración</strong> y activar:</p>
+                  <ul style="font-size:0.82rem; color:var(--text-secondary); padding-left:20px; margin-top:6px; line-height:1.8;">
+                    <li>🎙️ <strong style="color:var(--text-primary);">Micrófono</strong> — para hablar al aire</li>
+                    <li>🖥️ <strong style="color:var(--text-primary);">Captura de audio del escritorio</strong> — para pasar música de Spotify, YouTube, VLC, etc.</li>
+                    <li>🎵 <strong style="color:var(--text-primary);">Fuente de medios</strong> — para reproducir archivos MP3 directamente</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div style="display:flex; gap:16px; align-items:flex-start;">
+                <div style="width:36px; height:36px; border-radius:50%; background:var(--gradient-main); display:flex; align-items:center; justify-content:center; font-weight:800; flex-shrink:0;">3</div>
+                <div>
+                  <div style="font-weight:700; margin-bottom:4px;">Configurar el servidor de stream en OBS</div>
+                  <p style="font-size:0.82rem; color:var(--text-secondary);">Ir a <strong style="color:var(--text-primary);">Configuración → Emisión</strong>:</p>
+                  <ul style="font-size:0.82rem; color:var(--text-secondary); padding-left:20px; margin-top:6px; line-height:1.8;">
+                    <li>Servicio: <strong style="color:var(--cyan);">YouTube</strong> o <strong style="color:var(--purple-light);">Servidor personalizado (Icecast)</strong></li>
+                    <li>Pegar la URL del servidor y la clave de stream</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div style="display:flex; gap:16px; align-items:flex-start;">
+                <div style="width:36px; height:36px; border-radius:50%; background:var(--gradient-main); display:flex; align-items:center; justify-content:center; font-weight:800; flex-shrink:0;">4</div>
+                <div>
+                  <div style="font-weight:700; margin-bottom:4px;">Pegar la URL del stream en esta radio</div>
+                  <p style="font-size:0.82rem; color:var(--text-secondary);">Copiar la URL del stream generado y pegarla en la sección <strong style="color:var(--text-primary);">📡 Transmisión → URL del Stream</strong>. Tus oyentes escucharán automáticamente.</p>
+                </div>
+              </div>
+
+              <div style="display:flex; gap:16px; align-items:flex-start;">
+                <div style="width:36px; height:36px; border-radius:50%; background:linear-gradient(135deg,#10b981,#06b6d4); display:flex; align-items:center; justify-content:center; font-weight:800; flex-shrink:0;">✓</div>
+                <div>
+                  <div style="font-weight:700; margin-bottom:4px; color:var(--green);">¡Listo para transmitir!</div>
+                  <p style="font-size:0.82rem; color:var(--text-secondary);">Presionás "Iniciar transmisión" en OBS, luego "Ir al Aire" en esta radio. Tus oyentes escuchan tu música, micrófono y todo lo que configuraste.</p>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Tab: Ahora Suena ── -->
+        <div id="tabAhora" class="tab-content hidden">
+          <h2 style="font-family:var(--font-main); font-size:1.6rem; font-weight:800; margin-bottom:24px;">
+            🎵 Ahora Suena
+          </h2>
+          <div class="card mb-24">
+            <div class="card-subtitle">🎵 Actualizar metadata de la canción actual</div>
+            <div class="grid-2" style="gap:16px; margin-bottom:16px;">
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Título de la canción</label>
+                <input type="text" class="form-input" id="npTitle" placeholder="Ej: Bohemian Rhapsody" />
+              </div>
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Artista</label>
+                <input type="text" class="form-input" id="npArtist" placeholder="Ej: Queen" />
+              </div>
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Álbum (opcional)</label>
+                <input type="text" class="form-input" id="npAlbum" placeholder="Ej: A Night at the Opera" />
+              </div>
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Emoji / Ícono de portada</label>
+                <input type="text" class="form-input" id="npEmoji" placeholder="🎸 🎵 🎤 🎶" maxlength="4" />
+              </div>
+            </div>
+            <button class="btn btn-primary" onclick="updateNowPlaying()">📡 Actualizar en Vivo</button>
+          </div>
+
+          <!-- Preview -->
+          <div class="card">
+            <div class="card-subtitle">👁️ Vista previa (como lo ven tus oyentes)</div>
+            <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+              <div class="player-artwork" id="previewArtwork">🎵</div>
+              <div>
+                <div style="font-size:1.2rem; font-weight:800; font-family:var(--font-main);" id="previewSong">Título de la canción</div>
+                <div style="color:var(--text-secondary); margin-top:4px;" id="previewArtist">Artista</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Tab: Chat ── -->
+        <div id="tabChat" class="tab-content hidden">
+          <h2 style="font-family:var(--font-main); font-size:1.6rem; font-weight:800; margin-bottom:24px;">
+            💬 Chat de Oyentes
+          </h2>
+          <div style="display:grid; grid-template-columns:1fr 300px; gap:24px; align-items:start;">
+            <div>
+              <div class="chat-container" style="height:480px;">
+                <div class="chat-header">
+                  <div class="chat-header-title">💬 Mensajes en vivo</div>
+                  <div class="chat-online-count" id="broadcastOnlineCount">0 en línea</div>
+                </div>
+                <div class="chat-messages" id="broadcastChatMessages">
+                  <div style="text-align:center; color:var(--text-muted); padding:20px 0; font-size:0.85rem;">
+                    Sin mensajes aún...
+                  </div>
+                </div>
+                <div class="chat-input-area">
+                  <input type="text" class="chat-input" id="broadcastChatInput" placeholder="Responder como locutor..." maxlength="200" onkeypress="handleBroadcastChatKey(event)"/>
+                  <button class="chat-send-btn" onclick="sendBroadcastMessage()">➤</button>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div class="card mb-16">
+                <div class="card-subtitle">🎙️ Tu nick de locutor</div>
+                <input type="text" class="form-input" id="broadcastNickname" placeholder="Ej: DJ Martín" value="🎙️ Locutor" />
+              </div>
+              <div class="card">
+                <div class="card-subtitle">⚡ Mensajes rápidos</div>
+                <div style="display:flex; flex-direction:column; gap:8px;">
+                  <button class="btn btn-secondary" onclick="quickMessage('¡Bienvenidos a la radio!')">👋 Bienvenida</button>
+                  <button class="btn btn-secondary" onclick="quickMessage('¿Qué canción quieren escuchar?')">🎵 Pedir temas</button>
+                  <button class="btn btn-secondary" onclick="quickMessage('Volvemos en un momento...')">⏸️ Pausa técnica</button>
+                  <button class="btn btn-secondary" onclick="quickMessage('Gracias por escucharnos! ❤️')">❤️ Agradecimiento</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Tab: Estadísticas ── -->
+        <div id="tabEstadísticas" class="tab-content hidden">
+          <h2 style="font-family:var(--font-main); font-size:1.6rem; font-weight:800; margin-bottom:24px;">
+            📊 Estadísticas
+          </h2>
+          <div class="grid-4 mb-24">
+            <div class="stat-card">
+              <div class="stat-icon">👥</div>
+              <div class="stat-value" id="statsListenersNow">0</div>
+              <div class="stat-label">Oyentes ahora</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon">📅</div>
+              <div class="stat-value" id="statsListenersToday">0</div>
+              <div class="stat-label">Oyentes hoy</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon">💬</div>
+              <div class="stat-value" id="statsMsgsToday">0</div>
+              <div class="stat-label">Mensajes hoy</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon">⏱️</div>
+              <div class="stat-value" id="statsUptime">0h</div>
+              <div class="stat-label">Tiempo en aire hoy</div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-subtitle">📈 Últimos mensajes del chat</div>
+            <div id="statsRecentMessages" style="display:flex; flex-direction:column; gap:8px; max-height:300px; overflow-y:auto;">
+              <p class="text-muted" style="text-align:center; padding:20px;">Sin datos aún</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Tab: Configuración ── -->
+        <div id="tabEstación" class="tab-content hidden">
+          <h2 style="font-family:var(--font-main); font-size:1.6rem; font-weight:800; margin-bottom:24px;">
+            ⚙️ Configuración de la Estación
+          </h2>
+          <div class="card mb-24">
+            <div class="card-subtitle">📻 Datos de la estación</div>
+            <div class="form-group">
+              <label class="form-label">Nombre de la radio</label>
+              <input type="text" class="form-input" id="configName" placeholder="Ej: Radio Latina 99.9" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Slogan / tagline</label>
+              <input type="text" class="form-input" id="configTagline" placeholder="Ej: La radio de tu corazón" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Descripción</label>
+              <textarea class="form-textarea" id="configDescription" placeholder="Describí tu estación de radio..."></textarea>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Calidad del stream</label>
+              <select class="form-select" id="configQuality">
+                <option value="HD">HD (Alta Calidad)</option>
+                <option value="SD">SD (Media Calidad)</option>
+                <option value="LQ">LQ (Baja Calidad)</option>
+              </select>
+            </div>
+            <button class="btn btn-primary" onclick="saveStationConfig()">💾 Guardar Configuración</button>
+          </div>
+
+          <div class="card" style="border-color:rgba(239,68,68,0.2);">
+            <div class="card-subtitle" style="color:#f87171;">⚠️ Zona de peligro</div>
+            <p class="text-secondary mb-16" style="font-size:0.875rem;">Cambiar la contraseña del locutor.</p>
+            <div class="form-group">
+              <label class="form-label">Nueva contraseña</label>
+              <input type="password" class="form-input" id="newPassword" placeholder="Mínimo 8 caracteres" />
+            </div>
+            <button class="btn btn-danger" onclick="changePassword()">🔑 Cambiar Contraseña</button>
+          </div>
+        </div>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="js/supabase.js"></script>
+  <script src="js/broadcast.js"></script>
+
+</body>
+</html>
