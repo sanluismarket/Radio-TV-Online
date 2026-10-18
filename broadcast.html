@@ -78,9 +78,6 @@
           <div class="sidebar-link active" onclick="showTab('tabTransmisión')" id="sidebarTransmisión">
             <span class="sidebar-icon">📡</span> Transmisión
           </div>
-          <div class="sidebar-link" onclick="showTab('tabCamara')" id="sidebarCamara">
-            <span class="sidebar-icon">📹</span> Cámara / Video
-          </div>
           <div class="sidebar-link" onclick="showTab('tabAudio')" id="sidebarAudio">
             <span class="sidebar-icon">🎤</span> Fuentes de Audio
           </div>
@@ -167,145 +164,6 @@
         </div>
 
         <!-- ══════════════════════════════════════════
-             Tab: Cámara / Video
-        ══════════════════════════════════════════ -->
-        <div id="tabCamara" class="tab-content hidden">
-          <h2 style="font-family:var(--font-main); font-size:1.6rem; font-weight:800; margin-bottom:24px;">
-            📹 Cámara / Video en Vivo
-          </h2>
-
-          <div style="display:grid; grid-template-columns:1fr 300px; gap:24px; align-items:start;">
-
-            <!-- Preview de cámara -->
-            <div>
-              <div class="card mb-16" style="border-color:rgba(6,182,212,0.3); background:rgba(6,182,212,0.04);">
-                <div class="card-subtitle">📹 Preview de tu cámara (solo vos lo ves)</div>
-
-                <!-- Video preview -->
-                <div style="position:relative; background:#000; border-radius:var(--radius-lg); overflow:hidden; aspect-ratio:16/9; margin-bottom:16px;" id="cameraPreviewBox">
-                  <video id="cameraVideo" autoplay muted playsinline
-                    style="width:100%; height:100%; object-fit:cover; display:block;"></video>
-                  <div id="cameraPlaceholder" style="position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; color:var(--text-muted);">
-                    <span style="font-size:3rem;">📷</span>
-                    <p style="font-size:0.9rem;">Cámara apagada</p>
-                    <p style="font-size:0.78rem; text-align:center; max-width:280px;">Presioná "📹 Activar Cámara" para ver el preview.<br>En celular usá Chrome o Safari (no Instagram/Facebook). Sin webcam en PC, usá "🖥️ Compartir pantalla".</p>
-                  </div>
-                  <!-- ON AIR overlay -->
-                  <div id="cameraOnAirOverlay" style="display:none; position:absolute; top:12px; left:12px;">
-                    <div class="live-badge"><span class="live-dot"></span> CAM ACTIVA</div>
-                  </div>
-                  <!-- Mirror toggle -->
-                  <button id="mirrorBtn" onclick="toggleMirror()" title="Voltear imagen"
-                    style="display:none; position:absolute; top:12px; right:12px; background:rgba(0,0,0,0.5); border:none; color:white; padding:6px 10px; border-radius:8px; cursor:pointer; font-size:0.8rem;">
-                    🔄 Espejo
-                  </button>
-                </div>
-
-                <div style="display:flex; gap:10px; flex-wrap:wrap;">
-                  <button class="btn btn-primary" id="startCameraBtn" onclick="startCamera()">
-                    📹 Activar Cámara
-                  </button>
-                  <button class="btn btn-secondary" id="startScreenBtn" onclick="startScreenVideo()">
-                    🖥️ Compartir pantalla
-                  </button>
-                  <button class="btn btn-danger" id="stopCameraBtn" onclick="stopCamera()" style="display:none;">
-                    ⏹️ Apagar
-                  </button>
-                  <button class="btn btn-secondary" id="screenshotBtn" onclick="takeScreenshot()" style="display:none;">
-                    📸 Captura
-                  </button>
-                </div>
-
-                <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-                  <button class="btn btn-primary" id="videoGoLiveBtn" onclick="toggleVideoBroadcast()" style="background:linear-gradient(135deg,#ef4444,#f59e0b);">
-                    📹 Transmitir video en vivo
-                  </button>
-                  <span id="videoTxStatus" style="font-size:0.8rem; color:var(--text-secondary);"></span>
-                </div>
-                <p style="font-size:0.78rem; color:var(--text-secondary); margin-top:8px;">
-                  Al transmitir, los oyentes ven el botón <strong style="color:var(--text-primary);">"Ver en vivo"</strong> en la web de la radio y pueden mirarte.
-                </p>
-              </div>
-              </div>
-
-              <!-- Selección de cámara -->
-              <div class="card mb-16">
-                <div class="card-subtitle">🎥 Dispositivo de cámara</div>
-                <div style="display:flex; gap:10px; align-items:end; flex-wrap:wrap;">
-                  <div style="flex:1;">
-                    <label class="form-label">Seleccionar cámara</label>
-                    <select class="form-select" id="cameraSelect" onchange="switchCamera()">
-                      <option value="">— Seleccionar dispositivo —</option>
-                    </select>
-                  </div>
-                  <button class="btn btn-secondary" onclick="refreshCameraList()" style="height:44px;">🔄 Actualizar</button>
-                </div>
-                <div style="margin-top:12px; display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
-                  <label class="form-label" style="margin:0;">Calidad:</label>
-                  <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
-                    <input type="radio" name="camQuality" value="720" onchange="setCamQuality(this.value)" checked /> 720p
-                  </label>
-                  <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
-                    <input type="radio" name="camQuality" value="1080" onchange="setCamQuality(this.value)" /> 1080p
-                  </label>
-                  <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
-                    <input type="radio" name="camQuality" value="480" onchange="setCamQuality(this.value)" /> 480p (ahorro)
-                  </label>
-                </div>
-              </div>
-
-              <!-- Efectos visuales -->
-              <div class="card">
-                <div class="card-subtitle">🎨 Efectos de imagen</div>
-                <div style="display:flex; gap:10px; flex-wrap:wrap;">
-                  <button class="btn btn-secondary" onclick="applyCamFilter('none')">🎨 Normal</button>
-                  <button class="btn btn-secondary" onclick="applyCamFilter('grayscale(100%)')">⬛ B&N</button>
-                  <button class="btn btn-secondary" onclick="applyCamFilter('sepia(80%)')">🟫 Sepia</button>
-                  <button class="btn btn-secondary" onclick="applyCamFilter('contrast(1.4) brightness(1.1)')">💡 Alto contraste</button>
-                  <button class="btn btn-secondary" onclick="applyCamFilter('hue-rotate(180deg)')">🟣 Invertido</button>
-                </div>
-              </div>
-            </div>
-
-            <!-- Panel derecho: info y OBS -->
-            <div>
-              <div class="card mb-16" style="border-color:rgba(124,58,237,0.3);">
-                <div class="card-subtitle">ℹ️ ¿Cómo funciona el video?</div>
-                <p style="font-size:0.85rem; color:var(--text-secondary); line-height:1.7; margin-bottom:12px;">
-                  El preview de cámara te muestra cómo te ve el sistema para que puedas verificar encuadre e iluminación.
-                </p>
-                <p style="font-size:0.85rem; color:var(--text-secondary); line-height:1.7; margin-bottom:12px;">
-                  <strong style="color:var(--text-primary);">Para transmitir video + audio</strong> a tus oyentes, necesitás un servidor de streaming externo como:
-                </p>
-                <div style="display:flex; flex-direction:column; gap:8px;">
-                  <div style="background:rgba(124,58,237,0.1); border:1px solid rgba(124,58,237,0.2); border-radius:8px; padding:10px;">
-                    <div style="font-weight:700; font-size:0.85rem; margin-bottom:4px;">📺 YouTube Live</div>
-                    <div style="font-size:0.78rem; color:var(--text-secondary);">Gratis, global. OBS → YouTube RTMP → ponés el link del live en esta radio</div>
-                  </div>
-                  <div style="background:rgba(6,182,212,0.1); border:1px solid rgba(6,182,212,0.2); border-radius:8px; padding:10px;">
-                    <div style="font-weight:700; font-size:0.85rem; margin-bottom:4px;">📡 Icecast</div>
-                    <div style="font-size:0.78rem; color:var(--text-secondary);">Servidor propio de audio/video. Más control, requiere hosting</div>
-                  </div>
-                  <div style="background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.2); border-radius:8px; padding:10px;">
-                    <div style="font-weight:700; font-size:0.85rem; margin-bottom:4px;">🟣 Twitch</div>
-                    <div style="font-size:0.78rem; color:var(--text-secondary);">Ideal para radio con cámara. OBS → Twitch → embed en la web</div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Canvas de captura -->
-              <canvas id="screenshotCanvas" style="display:none;"></canvas>
-              <div id="screenshotPreview" style="display:none;" class="card">
-                <div class="card-subtitle">📸 Última captura</div>
-                <img id="screenshotImg" style="width:100%; border-radius:8px; margin-bottom:10px;" />
-                <a id="screenshotDownload" class="btn btn-secondary w-full" download="captura-radio.png" style="text-align:center;">⬇️ Descargar</a>
-              </div>
-            </div>
-
-          </div>
-        </div>
-
-        <!-- ══════════════════════════════════════════
              Tab: Fuentes de Audio
         ══════════════════════════════════════════ -->
         <div id="tabAudio" class="tab-content hidden">
@@ -314,24 +172,6 @@
           </h2>
 
           <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:24px; margin-bottom:24px;">
-
-            <!-- Opción 1: Música del panel (sin pantalla) -->
-            <div class="card" style="border-color:rgba(168,85,247,0.3);">
-              <div style="font-size:2rem; margin-bottom:8px;">🎵</div>
-              <div class="card-title">Música del Panel (sin pantalla)</div>
-              <p class="text-secondary" style="font-size:0.85rem; margin:8px 0 16px;">Cargá tus canciones (MP3) desde la compu y reproducilas acá. Se transmiten solas, sin compartir pantalla. Si querés hablar, activá también el micrófono.</p>
-              <div class="form-group">
-                <label class="form-label">Elegir canciones de la compu</label>
-                <input type="file" id="musicFiles" accept="audio/*" multiple style="font-size:0.8rem;">
-              </div>
-              <div id="playlistBox" style="display:none; max-height:130px; overflow-y:auto; background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:8px; padding:6px; margin-bottom:12px;">
-                <div id="playlist"></div>
-              </div>
-              <div style="display:flex; gap:10px; align-items:center;">
-                <button class="btn btn-primary" id="playListBtn" onclick="togglePanelMusic()" style="background:linear-gradient(135deg,#a855f7,#ec4899);">▶ Reproducir</button>
-                <span id="nowPlayingLabel" style="font-size:0.78rem; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:150px;"></span>
-              </div>
-            </div>
 
             <!-- Opción 2: Audio de la PC -->
             <div class="card" style="border-color:rgba(6,182,212,0.3);">
@@ -383,8 +223,6 @@
 
           </div>
 
-          <!-- Reproductor de audio oculto (música del panel) -->
-          <audio id="panelAudioEl" preload="auto" style="display:none;"></audio>
 
           <!-- Monitor de audio activo -->
           <div class="card mb-24" id="audioMonitorCard" style="display:none;">

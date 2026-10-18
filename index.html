@@ -8,6 +8,15 @@
   <meta name="description"
     content="Tu radio online 24/7. Escuchá música, noticias y más desde cualquier dispositivo. Completamente gratis." />
   <meta name="theme-color" content="#7c3aed" />
+
+  <!-- PWA & Mobile Icons -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="assets/icon-192.png">
+  <link rel="icon" type="image/png" href="assets/icon-192.png">
+
   <link rel="stylesheet" href="css/style.css" />
   <!-- Supabase -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -95,21 +104,6 @@
 
             <!-- Audio element oculto -->
             <audio id="audioPlayer" preload="none"></audio>
-          </div>
-
-          <!-- 📹 VIDEO EN VIVO -->
-          <div class="mb-24" id="videoLiveCard" style="display:none;">
-            <button id="watchVideoBtn" onclick="startWatchingVideo()" style="width:100%; padding:14px; border:none; border-radius:12px; cursor:pointer; font-weight:800; font-size:1rem; color:#fff; background:linear-gradient(135deg,#ef4444,#f59e0b); display:flex; align-items:center; justify-content:center; gap:8px;">
-              📹 Ver la transmisión en vivo (video)
-            </button>
-          </div>
-
-          <div class="mb-24" id="videoViewBox" style="display:none;">
-            <div style="position:relative; background:#000; border-radius:14px; overflow:hidden; aspect-ratio:16/9;">
-              <video id="remoteVideo" autoplay playsinline style="width:100%; height:100%; object-fit:contain; display:block;"></video>
-              <div class="live-badge" style="position:absolute; top:12px; left:12px;"><span class="live-dot"></span> EN VIVO</div>
-              <button onclick="closeVideoView()" style="position:absolute; top:10px; right:10px; background:rgba(0,0,0,0.65); border:none; color:#fff; padding:7px 14px; border-radius:8px; cursor:pointer; font-size:0.85rem;">✖ Cerrar</button>
-            </div>
           </div>
 
           <!-- Stats row -->
@@ -242,6 +236,72 @@
       </div>
     </div>
   </section>
+
+  <!-- ═══════════════════════════════════════════
+       INSTALAR APP (PWA)
+  ═══════════════════════════════════════════ -->
+  <section class="section" style="padding:50px 0;">
+    <div class="container" style="max-width:480px;">
+      <div id="installCard" class="card text-center" style="cursor:pointer;">
+        <div style="font-size:2.5rem; margin-bottom:12px;">📱</div>
+        <div class="card-title mb-8">Instalar Web App</div>
+        <p class="text-secondary" style="font-size:0.875rem; margin-bottom:16px;">Agregá la aplicación a tu inicio para tenernos siempre a mano.</p>
+        <button id="btnInstallApp" class="btn btn-primary w-full">
+          ⬇️ Instalar ahora
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <script>
+    // PWA Installation Logic
+    let deferredPrompt;
+    const installCard = document.getElementById('installCard');
+    const btnInstallApp = document.getElementById('btnInstallApp');
+
+    const isIos = () => {
+      const userAgent = window.navigator.userAgent.toLowerCase();
+      return /iphone|ipad|ipod/.test(userAgent);
+    };
+
+    const isInStandaloneMode = () => ('standalone' in window.navigator) && (window.navigator.standalone);
+
+    if (isIos() && !isInStandaloneMode()) {
+      btnInstallApp.addEventListener('click', () => {
+        alert('Para instalar en iPhone: Toca el botón "Compartir" (ícono del cuadrado con la flecha) y luego selecciona "Agregar a inicio".');
+      });
+    } else {
+      btnInstallApp.addEventListener('click', async () => {
+        if (deferredPrompt) {
+          deferredPrompt.prompt();
+          const { outcome } = await deferredPrompt.userChoice;
+          deferredPrompt = null;
+          installCard.classList.add('hidden');
+        } else {
+          alert('Buscá la opción "Instalar aplicación" o "Agregar a la pantalla de inicio" en el menú de tu navegador.');
+        }
+      });
+    }
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+    });
+
+    window.addEventListener('appinstalled', () => {
+      installCard.classList.add('hidden');
+    });
+
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('sw.js').then(function (registration) {
+          console.log('SW ok');
+        }, function (err) {
+          console.log('SW fail', err);
+        });
+      });
+    }
+  </script>
 
   <!-- ═══════════════════════════════════════════
        FOOTER
