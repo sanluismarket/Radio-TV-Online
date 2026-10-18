@@ -177,6 +177,18 @@ function showTab(tabId) {
   // Cargar datos según tab
   if (tabId === 'tabEstadísticas') loadStats();
   if (tabId === 'tabChat') scrollBroadcastChatToBottom();
+  if (tabId === 'tabAudio') {
+    navigator.mediaDevices?.enumerateDevices().then(devices => {
+      const mics = devices.filter(d => d.kind === 'audioinput');
+      if (mics.length > 0 && mics[0].label) {
+        listMicrophones();
+      } else {
+        const sel = document.getElementById('micSelect');
+        if (sel) sel.innerHTML = '<option value="">— Presioná "Activar Micrófono" para listar —</option>';
+      }
+    }).catch(() => {});
+  }
+  if (tabId === 'tabCamara') refreshCameraList();
 }
 
 // ─────────────────────────────────────────────
@@ -1485,28 +1497,6 @@ function updateVideoBtnUI() {
   if (status) {
     status.textContent = vidTx.active ? '🔴 En vivo para los oyentes' : '';
     status.style.color = vidTx.active ? 'var(--green)' : 'var(--text-secondary)';
-  }
-}
-
-// Cargar micrófonos cuando se abre el tab de audio
-const _origShowTab = showTab;
-function showTab(tabId) {
-  _origShowTab(tabId);
-  if (tabId === 'tabAudio') {
-    navigator.mediaDevices?.enumerateDevices().then(devices => {
-      const mics = devices.filter(d => d.kind === 'audioinput');
-      if (mics.length > 0 && mics[0].label) {
-        // Ya tenemos permisos
-        listMicrophones();
-      } else {
-        // Sin permisos aún — mostrar nombre genérico
-        const sel = document.getElementById('micSelect');
-        if (sel) sel.innerHTML = '<option value="">— Presioná "Activar Micrófono" para listar —</option>';
-      }
-    }).catch(() => {});
-  }
-  if (tabId === 'tabCamara') {
-    refreshCameraList();
   }
 }
 
